@@ -5075,26 +5075,21 @@ async function salvarCliente(tipo, dados) {
 async function loadClientes() {
   const root = document.getElementById('clientes-root');
   if (root) root.innerHTML = '<div class="loading pulse">carregando...</div>';
+  // Aguarda Firebase ficar disponível
   let attempts = 0;
-  while (!window._db && attempts < 20) { await new Promise(r=>setTimeout(r,200)); attempts++; }
-  if (!window._db) { if(root) root.innerHTML = '<div class="empty-state">Firebase não disponível</div>'; return; }
+  while (!window._db && attempts < 30) { await new Promise(r=>setTimeout(r,200)); attempts++; }
+  if (!window._db) { if(root) root.innerHTML = '<div class="empty-state">Firebase não disponível. Recarregue a página.</div>'; return; }
   try {
-    const snap = await window._fbGetDocs(
-      window._fbQuery(window._fbCollection(window._db,'clientes'),
-      window._fbWhere('nome','!=','__placeholder__'))
-    );
+    // Busca simples sem filtro — mais compatível
+    const snap = await window._fbGetDocs(window._fbCollection(window._db,'clientes'));
     _clientesData = snap.docs.map(d => ({...d.data(), _id: d.id}));
     _clientesData.sort((a,b)=>(b.atualizadoEm||'').localeCompare(a.atualizadoEm||''));
+    console.log('Clientes carregados:', _clientesData.length);
   } catch(e) {
-    // Fallback: getDocs without filter
-    try {
-      const snap2 = await window._fbGetDocs(window._fbCollection(window._db,'clientes'));
-      _clientesData = snap2.docs.map(d => ({...d.data(), _id: d.id}));
-      _clientesData.sort((a,b)=>(b.atualizadoEm||'').localeCompare(a.atualizadoEm||''));
-    } catch(e2) {
-      console.warn('Erro ao carregar clientes:', e2.message);
-      _clientesData = [];
-    }
+    console.warn('Erro ao carregar clientes:', e.message);
+    if(root) root.innerHTML = '<div class="empty-state">Erro ao carregar clientes: ' + e.message + '</div>';
+    _clientesData = [];
+    return;
   }
   drawClientes();
 }
@@ -5122,7 +5117,10 @@ function drawClientes() {
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:12px">';
   h += '<div><div style="font-size:20px;font-weight:600">👥 Clientes</div>';
   h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + _clientesData.length + ' cadastrados · ' + compradores + ' compradores · ' + vendedores + ' vendedores</div></div>';
-  h += '<button class="btn btn-primary btn-sm" onclick="loadClientes()">↻ Atualizar</button></div>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<button class="btn btn-primary btn-sm" onclick="loadClientes()">↻ Atualizar</button>';
+  h += '<button class="btn btn-sm btn-amber" onclick="migrarHistoricoClientes()" title="Importar histórico de todas as bikes/vendas existentes">📥 Importar histórico</button>';
+  h += '</div></div>';
   
   // Search bar
   h += '<div style="margin-bottom:1rem">';
@@ -5230,6 +5228,49 @@ function drawClienteDetalhe(c) {
 }
 
 window.renderClientes = function() { loadClientes(); };
+
+// ===== MIGRAR HISTÓRICO DE CLIENTES =====
+window.migrarHistoricoClientes = async function() {
+  if (!confirm('Isso vai varrer todas as bikes vendidas e cadastradas e popular o histórico dos clientes. Pode demorar alguns segundos. Continuar?')) return;
+  
+  let totalProcessados = 0;
+  try {
+    // Migrar compradores das bikes vendidas
+    const vendidasSnap = await getDocs(query(collection(db,'bikes'), where('vendida','==',true)));
+    for (const d of vendidasSnap.docs) {
+      const b = d.data();
+      if (!b.comprador && !b.compradorCPF && !b.compradorEmail) continue;
+      await salvarCliente('comprador', {
+        cpf: b.compradorCPF||'', nome: b.comprador||'', email: b.compradorEmail||'',
+        tel: b.compradorTel||'', cidade: b.compradorCidade||'', estado: b.compradorEstado||'',
+        cep: b.compradorCEP||'', endereco: b.compradorEnd||'',
+        valorVenda: b.valorVenda||0, dataVenda: b.dataVenda||'',
+        marca: b.marca||'', modelo: b.modelo||'', bikeId: d.id
+      });
+      totalProcessados++;
+    }
+    
+    // Migrar vendedores das bikes em estoque e vendidas
+    const todasSnap = await getDocs(collection(db,'bikes'));
+    for (const d of todasSnap.docs) {
+      const b = d.data();
+      const v = b.vendedor||{};
+      if (!v.nome && !v.cpf && !v.email) continue;
+      await salvarCliente('vendedor', {
+        cpf: v.cpf||'', nome: v.nome||'', email: v.email||'',
+        tel: v.tel||v.whatsapp||'', cidade: v.cidade||'', estado: v.estado||'',
+        valor: b.valor||0, dataEntrada: b.dataEntrada||'',
+        marca: b.marca||'', modelo: b.modelo||'', bikeId: d.id
+      });
+      totalProcessados++;
+    }
+    
+    await loadClientes();
+    alert('✓ Migração concluída! ' + totalProcessados + ' registros processados.');
+  } catch(e) {
+    alert('Erro na migração: ' + e.message);
+  }
+};
 window.clienteDetalhe = function(id) { _clienteDetalhe = id; drawClientes(); };
 window.clienteSearch = function(v) { _clienteBusca = v; drawClientes(); };
 
