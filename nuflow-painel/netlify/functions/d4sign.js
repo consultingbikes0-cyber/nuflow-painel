@@ -40,9 +40,9 @@ exports.handler = async function(event) {
         body: formBody
       });
       const text = await resp.text();
-      console.log('Upload →', text.substring(0,400));
+      console.log('Upload status:', resp.status, '→', text.substring(0,600));
       let data; try { data=JSON.parse(text); } catch(e){ data={raw:text}; }
-      if(!data.uuid) return { statusCode:200, headers:CORS, body:JSON.stringify({error:'Upload falhou', detail:data}) };
+      if(!data.uuid) return { statusCode:200, headers:CORS, body:JSON.stringify({error:'Upload falhou: '+JSON.stringify(data), detail:data}) };
       return { statusCode:200, headers:CORS, body:JSON.stringify({uuid:data.uuid}) };
     } catch(e) {
       return { statusCode:500, headers:CORS, body:JSON.stringify({error:e.message}) };
@@ -60,8 +60,8 @@ exports.handler = async function(event) {
   if(action === 'assinar'){
     const { uuidDoc, signatarios, mensagem } = payload;
     try {
-      // Aguarda 3s para o D4Sign processar o upload antes de cadastrar signatários
-      await new Promise(r => setTimeout(r, 3000));
+      // Aguarda 8s para o D4Sign processar o upload antes de cadastrar signatários
+      await new Promise(r => setTimeout(r, 8000));
 
       const signatariosComTipo = signatarios.map(s => ({
         email: s.email,
@@ -83,8 +83,8 @@ exports.handler = async function(event) {
         return { statusCode:200, headers:CORS, body:JSON.stringify({error:'Erro signatários', detail:signResp}) };
       }
 
-      // Aguarda mais 2s antes de enviar
-      await new Promise(r => setTimeout(r, 2000));
+      // Aguarda mais 3s antes de enviar
+      await new Promise(r => setTimeout(r, 3000));
 
       const sendResp = await api(`/documents/${uuidDoc}/sendToSigner`, 'POST', {
         message: mensagem || 'Por favor, assine o documento da Nuflow Bikes.',

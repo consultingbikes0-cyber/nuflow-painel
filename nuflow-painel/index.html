@@ -5231,43 +5231,36 @@ window.renderClientes = function() { loadClientes(); };
 
 // ===== MIGRAR HISTÓRICO DE CLIENTES =====
 window.migrarHistoricoClientes = async function() {
-  if (!confirm('Isso vai varrer todas as bikes vendidas e cadastradas e popular o histórico dos clientes. Pode demorar alguns segundos. Continuar?')) return;
-  
+  if (!confirm('Isso vai importar o histórico de todas as bikes do sistema para os clientes. Continuar?')) return;
   let totalProcessados = 0;
   try {
-    // Migrar compradores das bikes vendidas
-    const vendidasSnap = await getDocs(query(collection(db,'bikes'), where('vendida','==',true)));
-    for (const d of vendidasSnap.docs) {
-      const b = d.data();
-      if (!b.comprador && !b.compradorCPF && !b.compradorEmail) continue;
+    if (!bikes || bikes.length === 0) { alert('Carregue o painel antes de migrar.'); return; }
+    // Compradores (bikes vendidas)
+    for (const b of bikes.filter(b => b.vendida && b.comprador)) {
       await salvarCliente('comprador', {
         cpf: b.compradorCPF||'', nome: b.comprador||'', email: b.compradorEmail||'',
         tel: b.compradorTel||'', cidade: b.compradorCidade||'', estado: b.compradorEstado||'',
         cep: b.compradorCEP||'', endereco: b.compradorEnd||'',
         valorVenda: b.valorVenda||0, dataVenda: b.dataVenda||'',
-        marca: b.marca||'', modelo: b.modelo||'', bikeId: d.id
+        marca: b.marca||'', modelo: b.modelo||'', bikeId: b._docId
       });
       totalProcessados++;
     }
-    
-    // Migrar vendedores das bikes em estoque e vendidas
-    const todasSnap = await getDocs(collection(db,'bikes'));
-    for (const d of todasSnap.docs) {
-      const b = d.data();
-      const v = b.vendedor||{};
-      if (!v.nome && !v.cpf && !v.email) continue;
+    // Vendedores (todas as bikes com vendedor)
+    for (const b of bikes.filter(b => b.vendedor && b.vendedor.nome)) {
+      const v = b.vendedor;
       await salvarCliente('vendedor', {
         cpf: v.cpf||'', nome: v.nome||'', email: v.email||'',
         tel: v.tel||v.whatsapp||'', cidade: v.cidade||'', estado: v.estado||'',
         valor: b.valor||0, dataEntrada: b.dataEntrada||'',
-        marca: b.marca||'', modelo: b.modelo||'', bikeId: d.id
+        marca: b.marca||'', modelo: b.modelo||'', bikeId: b._docId
       });
       totalProcessados++;
     }
-    
     await loadClientes();
     alert('✓ Migração concluída! ' + totalProcessados + ' registros processados.');
   } catch(e) {
+    console.error(e);
     alert('Erro na migração: ' + e.message);
   }
 };
