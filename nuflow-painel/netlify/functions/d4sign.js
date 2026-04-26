@@ -71,7 +71,12 @@ exports.handler = async function(event) {
   if(action === 'assinar'){
     const { uuidDoc, signatarios, mensagem } = payload;
     try {
-      const signResp = await api(`/documents/${uuidDoc}/createList`, 'POST', { signers: signatarios });
+      // Adiciona type_sign: 2 (assinar sem campo posicionado) para cada signatário
+      const signatariosComTipo = signatarios.map(s => ({
+        ...s,
+        type_sign: '2',  // 1=campo posicionado, 2=sem campo (assina no final)
+      }));
+      const signResp = await api(`/documents/${uuidDoc}/createList`, 'POST', { signers: signatariosComTipo });
       console.log('Signatários →', JSON.stringify(signResp).substring(0,400));
 
       // Checar erro explícito
