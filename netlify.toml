@@ -1,12 +1,9 @@
 [build]
-  publish = "."
-  functions = "netlify/functions"
+  publish = "nuflow-painel"
+  functions = "nuflow-painel/netlify/functions"
 
 [functions]
   node_bundler = "esbuild"
 
 [functions."d4sign"]
-  timeout = 26
-
-[functions."validate-photos"]
   timeout = 26
