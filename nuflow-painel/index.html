@@ -927,7 +927,7 @@ function renderEstoque(){
         <div class="sell-grid">
           <div class="fg"><label>Nome do comprador *</label><input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>CPF comprador * <button type="button" onclick="buscarClientePorCPFVenda('${b._docId}')" style="font-size:10px;padding:2px 8px;background:var(--teal);color:#000;border:none;border-radius:4px;cursor:pointer;font-family:DM Sans,sans-serif;font-weight:600;margin-left:6px">🔍 Preencher</button></label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>RG</label><input type="text" id="sv-rg-${b._docId}" placeholder="ex: M1431941" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+
           <div class="fg"><label>E-mail comprador *</label><input type="email" id="sv-email-${b._docId}" placeholder="email@email.com" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Telefone / WhatsApp *</label><input type="text" id="sv-tel-${b._docId}" placeholder="(31) 9 9999-9999" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>CEP</label><input type="text" id="sv-cep-${b._docId}" placeholder="00000-000" oninput="salvarRascunhoVenda('${b._docId}')" onblur="buscaCEPVenda(this,'${b._docId}')"></div>
@@ -2291,6 +2291,7 @@ window.registrarVenda=async function(id){
     salvarCliente('comprador', {
       cpf: compradorCPF, nome: comprador, email: compradorEmail,
       tel: compradorTel, cidade: compradorCidade, estado: compradorEstado,
+      cep: g('sv-cep-'+id), endereco: g('sv-end-'+id),
       valorVenda, dataVenda, marca: bike.marca, modelo: bike.modelo, bikeId: id
     });
     limparRascunhoVenda(id);
@@ -3580,7 +3581,9 @@ function preencherFormularioVenda(bikeId, c) {
   s('sv-tel-'+bikeId, c.tel);
   s('sv-cidade-'+bikeId, c.cidade);
   s('sv-estado-'+bikeId, c.estado);
-  // CPF já está preenchido
+  s('sv-cep-'+bikeId, c.cep);
+  s('sv-end-'+bikeId, c.endereco);
+  salvarRascunhoVenda(bikeId);
   alert('✓ Dados de ' + (c.nome||'cliente') + ' preenchidos!');
 }
 
@@ -5044,6 +5047,8 @@ async function salvarCliente(tipo, dados) {
       if (dados.tel || dados.whatsapp) update.tel = dados.tel || dados.whatsapp;
       if (dados.cidade) update.cidade = dados.cidade;
       if (dados.estado) update.estado = dados.estado;
+      if (dados.cep) update.cep = dados.cep;
+      if (dados.endereco) update.endereco = dados.endereco;
       await _updateDoc(_doc(window._db, 'clientes', existingId), update);
     } else {
       const cpfClean = (dados.cpf||'').replace(/\D/g,'');
@@ -5055,6 +5060,8 @@ async function salvarCliente(tipo, dados) {
         tel: dados.tel || dados.whatsapp || '',
         cidade: dados.cidade || '',
         estado: dados.estado || '',
+        cep: dados.cep || '',
+        endereco: dados.endereco || '',
         historico: [entrada],
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString()
@@ -5178,7 +5185,14 @@ function drawClienteDetalhe(c) {
   h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
   h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Dados de contato</div>';
   h += '<div style="display:flex;flex-direction:column;gap:8px">';
-  [['CPF', c.cpf], ['E-mail', c.email], ['Telefone', c.tel], ['Cidade', c.cidade + (c.estado?' / '+c.estado:'')]].forEach(function(row) {
+  [
+    ['CPF', c.cpf],
+    ['E-mail', c.email],
+    ['Telefone', c.tel],
+    ['Cidade / Estado', c.cidade ? c.cidade + (c.estado?' / '+c.estado:'') : ''],
+    ['CEP', c.cep],
+    ['Endereço', c.endereco]
+  ].forEach(function(row) {
     if (row[1]) h += '<div><div style="font-size:10px;color:var(--text3)">' + row[0] + '</div><div style="font-size:13px;font-weight:500">' + row[1] + '</div></div>';
   });
   h += '</div></div>';
