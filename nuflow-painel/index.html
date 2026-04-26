@@ -632,6 +632,7 @@ window._fbOrderBy=orderBy;
 let storage=null; // inicializado sob demanda
 const bikesCol=collection(db,'bikes');
 let bikes=[];
+window._bikes=bikes;
 let charts={};
 
 const COM_PISO=700,COM_TETO=4500,COM_PERC=0.08;
@@ -755,7 +756,7 @@ async function loadData(){
   setSyncStatus('saving');
   try{
     const snap=await getDocs(bikesCol);
-    bikes=snap.docs.map(d=>({...d.data(),_docId:d.id}));
+    bikes=window._bikes=snap.docs.map(d=>({...d.data(),_docId:d.id}));
     setSyncStatus('ok');
   }catch(e){console.error(e);setSyncStatus('error');}
   // Renderiza primeiro, sem esperar limpeza
@@ -5234,9 +5235,10 @@ window.migrarHistoricoClientes = async function() {
   if (!confirm('Isso vai importar o histórico de todas as bikes do sistema para os clientes. Continuar?')) return;
   let totalProcessados = 0;
   try {
-    if (!bikes || bikes.length === 0) { alert('Carregue o painel antes de migrar.'); return; }
+    const _b = window._bikes||[];
+    if (!_b.length) { alert('Carregue o painel antes de migrar.'); return; }
     // Compradores (bikes vendidas)
-    for (const b of bikes.filter(b => b.vendida && b.comprador)) {
+    for (const b of _b.filter(b => b.vendida && b.comprador)) {
       await salvarCliente('comprador', {
         cpf: b.compradorCPF||'', nome: b.comprador||'', email: b.compradorEmail||'',
         tel: b.compradorTel||'', cidade: b.compradorCidade||'', estado: b.compradorEstado||'',
@@ -5247,7 +5249,7 @@ window.migrarHistoricoClientes = async function() {
       totalProcessados++;
     }
     // Vendedores (todas as bikes com vendedor)
-    for (const b of bikes.filter(b => b.vendedor && b.vendedor.nome)) {
+    for (const b of _b.filter(b => b.vendedor && b.vendedor.nome)) {
       const v = b.vendedor;
       await salvarCliente('vendedor', {
         cpf: v.cpf||'', nome: v.nome||'', email: v.email||'',
