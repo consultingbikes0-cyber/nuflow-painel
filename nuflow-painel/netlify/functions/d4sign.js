@@ -15,7 +15,7 @@ exports.handler = async function(event) {
     if(body) opts.body = JSON.stringify(body);
     const r = await fetch(url, opts);
     const text = await r.text();
-    console.log(`[${method||'GET'}] ${endpoint} →`, text.substring(0,500));
+    console.log(`[${method||'GET'}] ${endpoint} → ${r.status} →`, text.substring(0,600));
     try { return JSON.parse(text); } catch(e) { return { raw: text }; }
   };
 
@@ -50,17 +50,20 @@ exports.handler = async function(event) {
     }
   }
 
-  // ── STATUS — retorna dados brutos completos ──
+  // ── STATUS ──
   if(action === 'status'){
     const { uuidDoc } = payload;
     try {
       const data = await api(`/documents/${uuidDoc}`, 'GET');
-      // Extrair statusId de qualquer campo possível
+      // Se retornou erro de rate limit ou status=false, ainda não está pronto
+      if(data.error || data.status === false) {
+        console.log('STATUS: documento ainda processando ou erro:', data.error||'status false');
+        return { statusCode:200, headers:CORS, body:JSON.stringify({statusId:'1', ready:false, detail:data}) };
+      }
       const raw = data.statusId ?? data.status_id ?? data.statusid ?? data.status ?? null;
       const statusId = raw !== null ? String(raw) : '';
-      // Pronto = qualquer status que não seja "1" (Processando) e não seja vazio
-      const ready = statusId !== '' && statusId !== '1';
-      console.log('STATUS FINAL → statusId:', statusId, '| ready:', ready, '| keys:', Object.keys(data).join(','));
+      const ready = statusId !== '' && statusId !== '1' && statusId !== 'false';
+      console.log('STATUS FINAL → statusId:', statusId, '| ready:', ready);
       return { statusCode:200, headers:CORS, body:JSON.stringify({statusId, ready, keys:Object.keys(data)}) };
     } catch(e) {
       return { statusCode:500, headers:CORS, body:JSON.stringify({error:e.message}) };
@@ -71,24 +74,34 @@ exports.handler = async function(event) {
   if(action === 'assinar'){
     const { uuidDoc, signatarios, mensagem } = payload;
     try {
-      // Adiciona type_sign: 2 (assinar sem campo posicionado) para cada signatário
+      // type_sign: 2 = assinar sem campo posicionado no PDF
       const signatariosComTipo = signatarios.map(s => ({
-        ...s,
-        type_sign: '2',  // 1=campo posicionado, 2=sem campo (assina no final)
+        email: s.email,
+        act: s.act || '1',
+        foreign: s.foreign || '0',
+        certificadoicpbr: s.certificadoicpbr || '0',
+        assinatura_presencial: '0',
+        docauth: '0',
+        docauthandselfie: '0',
+        embed_methodauth: 'email',
+        type_sign: '2',
       }));
-      const signResp = await api(`/documents/${uuidDoc}/createList`, 'POST', { signers: signatariosComTipo });
-      console.log('Signatários →', JSON.stringify(signResp).substring(0,400));
 
-      // Checar erro explícito
-      const signOk = !signResp.error && !(String(signResp.message||'').toLowerCase().includes('error'));
-      if(!signOk) return { statusCode:200, headers:CORS, body:JSON.stringify({error:'Erro signatários', detail:signResp}) };
+      console.log('Enviando signatários:', JSON.stringify(signatariosComTipo));
+      const signResp = await api(`/documents/${uuidDoc}/createList`, 'POST', { signers: signatariosComTipo });
+      console.log('createList resposta:', JSON.stringify(signResp));
+
+      if(signResp.error) {
+        return { statusCode:200, headers:CORS, body:JSON.stringify({error:'Erro ao cadastrar signatários', detail:signResp}) };
+      }
 
       const sendResp = await api(`/documents/${uuidDoc}/sendToSigner`, 'POST', {
         message: mensagem || 'Por favor, assine o documento da Nuflow Bikes.',
         workflow: '0',
         skip_email: '0'
       });
-      console.log('Envio →', JSON.stringify(sendResp).substring(0,400));
+      console.log('sendToSigner resposta:', JSON.stringify(sendResp));
+
       return { statusCode:200, headers:CORS, body:JSON.stringify({success:true, signResp, sendResp}) };
     } catch(e) {
       return { statusCode:500, headers:CORS, body:JSON.stringify({error:e.message}) };
