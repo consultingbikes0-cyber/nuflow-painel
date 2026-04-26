@@ -926,7 +926,7 @@ function renderEstoque(){
         </div>
         <div class="sell-grid">
           <div class="fg"><label>Nome do comprador *</label><input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>CPF comprador *</label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>CPF comprador * <button type="button" onclick="buscarClientePorCPFVenda('${b._docId}')" style="font-size:10px;padding:2px 8px;background:var(--teal);color:#000;border:none;border-radius:4px;cursor:pointer;font-family:DM Sans,sans-serif;font-weight:600;margin-left:6px">🔍 Preencher</button></label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>RG</label><input type="text" id="sv-rg-${b._docId}" placeholder="ex: M1431941" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>E-mail comprador *</label><input type="email" id="sv-email-${b._docId}" placeholder="email@email.com" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Telefone / WhatsApp *</label><input type="text" id="sv-tel-${b._docId}" placeholder="(31) 9 9999-9999" oninput="salvarRascunhoVenda('${b._docId}')"></div>
@@ -3548,6 +3548,43 @@ window.editarTipoFin=async function(id,novoTipo){
 };
 
 window.renderFinanceiro=renderFinanceiro;
+
+// ===== BUSCA CLIENTE POR CPF NO FORMULÁRIO DE VENDA =====
+window.buscarClientePorCPFVenda = async function(bikeId) {
+  const cpfInput = document.getElementById('sv-cpf-'+bikeId);
+  if (!cpfInput) return;
+  const cpf = cpfInput.value.replace(/\D/g,'');
+  if (cpf.length < 11) { alert('Digite o CPF completo antes de buscar.'); return; }
+
+  // Busca no banco de clientes em memória primeiro
+  const cliente = _clientesData.find(c => (c.cpfClean||c.cpf||'').replace(/\D/g,'') === cpf);
+
+  if (!cliente) {
+    // Tenta buscar do Firebase direto
+    try {
+      const snap = await getDocs(query(collection(db,'clientes'), where('cpfClean','==',cpf)));
+      if (snap.empty) { alert('CPF não encontrado no banco de clientes.'); return; }
+      preencherFormularioVenda(bikeId, snap.docs[0].data());
+    } catch(e) {
+      alert('CPF não encontrado no banco de clientes.');
+    }
+    return;
+  }
+  preencherFormularioVenda(bikeId, cliente);
+};
+
+function preencherFormularioVenda(bikeId, c) {
+  const s = (id, val) => { const el = document.getElementById(id); if(el && val) el.value = val; };
+  s('sv-comp-'+bikeId, c.nome);
+  s('sv-email-'+bikeId, c.email);
+  s('sv-tel-'+bikeId, c.tel);
+  s('sv-cidade-'+bikeId, c.cidade);
+  s('sv-estado-'+bikeId, c.estado);
+  // CPF já está preenchido
+  alert('✓ Dados de ' + (c.nome||'cliente') + ' preenchidos!');
+}
+
+
 
 // ===== TEMP: Limpar lançamentos receita_venda de uma bike =====
 window.limparDuplicadosFinanceiro=async function(){
