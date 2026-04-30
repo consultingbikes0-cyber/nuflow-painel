@@ -730,6 +730,17 @@ async function loadData(){
   await loadGastos();
   await loadFinanceiro();
   updateCounts();renderEstoque();renderVendidas();renderBCPending();renderAlertas();renderProgressoMetas();
+  // Corrigir valores errados por serie — executa silenciosamente
+  const _CORR=[{serie:'22SBEXM168',valor:22500},{serie:'WSBC001026388R',valor:24900}];
+  bikes.forEach(async b=>{
+    const f=_CORR.find(c=>c.serie===(b.serie||'').trim());
+    if(f&&Number(b.valor)!==f.valor){
+      await updateDoc(doc(db,'bikes',b._docId),{valor:f.valor,precoEst:f.valor});
+      b.valor=f.valor;b.precoEst=f.valor;
+      console.log('Valor corrigido:',b.marca,b.modelo,'R$'+f.valor);
+      renderEstoque();
+    }
+  });
   // Limpeza roda em background sem bloquear
   setTimeout(()=>limparFotosAntigas().catch(()=>{}),3000);
 }
