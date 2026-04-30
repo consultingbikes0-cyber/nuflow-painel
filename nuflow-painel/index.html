@@ -245,7 +245,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
     <div class="sell-grid">
       <div class="fg"><label>Marca *</label><input id="rq-marca" type="text" placeholder="ex: Specialized" list="marcas-list"></div>
       <div class="fg"><label>Modelo *</label><input id="rq-modelo" type="text" placeholder="ex: Stumpjumper"></div>
-      <div class="fg"><label>Valor acordado (R$) *</label><input id="rq-valor" type="text" inputmode="numeric" placeholder="ex: 15000 ou 22.500" oninput="calcComissaoRapido()"></div>
+      <div class="fg"><label>Valor acordado (R$) *</label><input id="rq-valor" type="number" placeholder="ex: 15000" oninput="calcComissaoRapido()"></div>
       <div class="fg"><label>Comissão (R$)</label>
         <input id="rq-comissao" type="number" placeholder="calculada automaticamente">
         <span id="rq-com-preview" style="font-size:11px;color:var(--green);font-family:'DM Mono',monospace;margin-top:3px;display:block"></span>
@@ -523,7 +523,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <div class="fg"><label>Aquisição</label>
         <select id="n-aquisicao" onchange="toggleProprioBlock()"><option value="consignado">Consignado</option><option value="proprio">Compra própria</option></select>
       </div>
-      <div class="fg"><label>Valor acordado (R$) *</label><input id="n-valor" type="text" inputmode="numeric" placeholder="ex: 15000 ou 22.500" oninput="calcComissao()"></div>
+      <div class="fg"><label>Valor acordado (R$) *</label><input id="n-valor" type="number" min="0" placeholder="ex: 15000" oninput="calcComissao()"></div>
       <div class="fg"><label>Data de entrada *</label><input id="n-data" type="date"></div>
       <div class="fg"><label>Número de série</label><input id="n-serie" type="text" placeholder="ex: WTU123456"></div>
       <div class="fg gcol2"><label>Comissão calculada</label><div class="com-preview" id="com-preview">Preencha o valor</div></div>
@@ -587,22 +587,6 @@ let bikes=[];
 let charts={};
 
 const COM_PISO=700,COM_TETO=4500,COM_PERC=0.08;
-
-// Converte valor digitado em pt-BR ("22.500" ou "22500" ou "22,5") para número
-function parseBRL(str){
-  if(!str)return 0;
-  const s=String(str).trim();
-  // Se tem vírgula como decimal: "22.500,00" → 22500
-  if(s.includes(','))return Number(s.replace(/\./g,'').replace(',','.'));
-  // Se tem ponto como milhar: "22.500" → 22500 (4+ dígitos após ponto = milhar)
-  if(s.includes('.')){
-    const partes=s.split('.');
-    const ultima=partes[partes.length-1];
-    if(ultima.length===3)return Number(s.replace(/\./g,''));
-    return Number(s); // ponto decimal normal: "22.5"
-  }
-  return Number(s);
-}
 
 // ===== CHECK SECTIONS =====
 const CHECK_SECTIONS=[
@@ -730,17 +714,6 @@ async function loadData(){
   await loadGastos();
   await loadFinanceiro();
   updateCounts();renderEstoque();renderVendidas();renderBCPending();renderAlertas();renderProgressoMetas();
-  // Corrigir valores errados por serie — executa silenciosamente
-  const _CORR=[{serie:'22SBEXM168',valor:22500},{serie:'WSBC001026388R',valor:24900}];
-  bikes.forEach(async b=>{
-    const f=_CORR.find(c=>c.serie===(b.serie||'').trim());
-    if(f&&Number(b.valor)!==f.valor){
-      await updateDoc(doc(db,'bikes',b._docId),{valor:f.valor,precoEst:f.valor});
-      b.valor=f.valor;b.precoEst=f.valor;
-      console.log('Valor corrigido:',b.marca,b.modelo,'R$'+f.valor);
-      renderEstoque();
-    }
-  });
   // Limpeza roda em background sem bloquear
   setTimeout(()=>limparFotosAntigas().catch(()=>{}),3000);
 }
@@ -891,12 +864,46 @@ function renderEstoque(){
         <button class="btn btn-sm btn-teal" onclick="abrirBikeCheck('${b._docId}')">
           ${!hasCheck?'Fazer bike check':(()=>{const s=b.bikeCheckSalvoEm||b.criadoEm;const d=s?Math.floor((new Date()-new Date(s))/86400000):0;return d<=5?'✏️ Editar bike check':'✓ Ver bike check';})()}
         </button>
+        ${(()=>{const dc=b.criadoEm?Math.floor((new Date()-new Date(b.criadoEm))/86400000):999;return dc<=10?`<button class="btn btn-sm btn-blue" onclick="abrirEditarBike('${b._docId}')">✏️ Editar bike</button>`:''})()}
         ${hasNF&&b.nfURL?`<button class="btn btn-sm btn-blue" onclick="window.open('${b.nfURL}','_blank')">📄 NF</button>`:''}
         <button class="btn btn-sm btn-amber" onclick="reenviarContratoConsig('${b._docId}')" title="${b.contratoConsigStatus?'Contrato: '+b.contratoConsigStatus:'Sem contrato gerado'}">
-          ${b.contratoConsigD4SignUUID?'🔁 Reenviar contrato':'📄 Gerar contrato consig.'}
+          ${b.contratoConsigD4SignUUID?'🔄 Reenviar atualizado':'📄 Gerar contrato consig.'}
         </button>
         <span id="reenvio-msg-${b._docId}" style="display:none;font-size:11px;font-family:'DM Mono',monospace;color:var(--green)"></span>
         <button class="btn btn-sm btn-danger" onclick="removerBike('${b._docId}')">Remover</button>
+      </div>
+      <div class="sell-panel" id="edit-bike-${b._docId}">
+        <div class="panel-title">✏️ Editar bike e proprietário</div>
+        <div style="font-size:11px;color:var(--amber);font-family:'DM Mono',monospace;margin-bottom:1rem">Disponível por 10 dias após o cadastro</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.75rem">Bike</div>
+        <div class="sell-grid" style="margin-bottom:1.25rem">
+          <div class="fg"><label>Marca</label><input type="text" id="eb-marca-${b._docId}" value="${b.marca||''}"></div>
+          <div class="fg"><label>Modelo</label><input type="text" id="eb-modelo-${b._docId}" value="${b.modelo||''}"></div>
+          <div class="fg"><label>Versão</label><input type="text" id="eb-versao-${b._docId}" value="${b.versao||''}"></div>
+          <div class="fg"><label>Ano</label><select id="eb-ano-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+            <option value="">—</option>
+            ${[2025,2024,2023,2022,2021,2020,2019,2018].map(a=>`<option value="${a}" ${b.ano==a?'selected':''}>${a}</option>`).join('')}
+          </select></div>
+          <div class="fg"><label>Tipo</label><select id="eb-tipo-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+            ${['Trail','E-MTB','Enduro','XC','DH','Gravel','Outro'].map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}
+          </select></div>
+          <div class="fg"><label>Tamanho</label><input type="text" id="eb-tamanho-${b._docId}" value="${b.tamanho||''}"></div>
+          <div class="fg"><label>Nº Série</label><input type="text" id="eb-serie-${b._docId}" value="${b.serie||''}"></div>
+          <div class="fg"><label>Valor acordado (R$)</label><input type="text" id="eb-valor-${b._docId}" value="${b.valor||''}" oninput="calcComissaoEditBike('${b._docId}')"></div>
+          <div class="fg"><label>Cor</label><input type="text" id="eb-cor-${b._docId}" value="${b.cor||''}"></div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.75rem">Proprietário</div>
+        <div class="sell-grid" style="margin-bottom:1rem">
+          <div class="fg"><label>Nome *</label><input type="text" id="eb-vnome-${b._docId}" value="${b.vendedor?.nome||''}"></div>
+          <div class="fg"><label>CPF</label><input type="text" id="eb-vcpf-${b._docId}" value="${b.vendedor?.cpf||''}"></div>
+          <div class="fg"><label>E-mail</label><input type="email" id="eb-vemail-${b._docId}" value="${b.vendedor?.email||''}"></div>
+          <div class="fg"><label>Telefone</label><input type="text" id="eb-vtel-${b._docId}" value="${b.vendedor?.tel||''}"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="salvarEditarBike('${b._docId}')">Salvar alterações</button>
+          <button class="btn btn-sm" onclick="document.getElementById('edit-bike-${b._docId}').classList.remove('open')">Cancelar</button>
+          <span id="eb-msg-${b._docId}" style="display:none;font-size:12px;color:var(--green);font-family:'DM Mono',monospace;align-self:center">✓ Salvo!</span>
+        </div>
       </div>
       <div class="sell-panel" id="sell-${b._docId}">
         <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center">
@@ -2740,48 +2747,97 @@ window.cadastrarEGerarConsignacao=async function(){
 
 
 // ===== REENVIAR / GERAR CONTRATO CONSIGNAÇÃO =====
+// ===== EDITAR BIKE (10 DIAS) =====
+window.abrirEditarBike=function(id){
+  // Fechar outros painéis abertos
+  document.querySelectorAll('[id^="edit-bike-"]').forEach(p=>p.classList.remove('open'));
+  document.getElementById('edit-bike-'+id)?.classList.add('open');
+  document.getElementById('edit-bike-'+id)?.scrollIntoView({behavior:'smooth',block:'nearest'});
+};
+
+window.calcComissaoEditBike=function(id){
+  const v=parseBRL(document.getElementById('eb-valor-'+id)?.value);
+  if(!v)return;
+  const com=calcCom(v);
+  const raw=v*COM_PERC;
+  let txt=fmtRInt(com);
+  if(raw<COM_PISO)txt+=' (piso)';
+  else if(raw>COM_TETO)txt+=' (teto)';
+  const el=document.getElementById('eb-msg-'+id);
+  // só mostrar hint, não msg de salvo
+};
+
+window.salvarEditarBike=async function(id){
+  const g=sid=>{const el=document.getElementById(sid+id);return el?el.value.trim():'';};
+  const bike=bikes.find(b=>b._docId===id);
+  if(!bike)return;
+
+  // Validar 10 dias
+  const dc=bike.criadoEm?Math.floor((new Date()-new Date(bike.criadoEm))/86400000):999;
+  if(dc>10){alert('Prazo de edição de 10 dias expirado.');return;}
+
+  const novoValor=parseBRL(document.getElementById('eb-valor-'+id)?.value)||bike.valor;
+  const updates={
+    marca:g('eb-marca-'),modelo:g('eb-modelo-'),versao:g('eb-versao-'),
+    ano:g('eb-ano-'),tipo:g('eb-tipo-'),tamanho:g('eb-tamanho-'),
+    serie:g('eb-serie-'),cor:g('eb-cor-'),
+    valor:novoValor,precoEst:novoValor,
+    vendedor:{
+      ...bike.vendedor,
+      nome:g('eb-vnome-'),cpf:g('eb-vcpf-'),
+      email:g('eb-vemail-'),tel:g('eb-vtel-'),
+    }
+  };
+
+  setSyncStatus('saving');
+  try{
+    await updateDoc(doc(db,'bikes',id),updates);
+    Object.assign(bike,updates);
+    setSyncStatus('ok');
+    const msg=document.getElementById('eb-msg-'+id);
+    if(msg){msg.style.display='inline';setTimeout(()=>{msg.style.display='none';},2000);}
+    await loadData();
+  }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao salvar.\n'+e.message);}
+};
+
+// ===== REENVIAR CONTRATO — SEMPRE GERA PDF ATUALIZADO =====
 window.reenviarContratoConsig=async function(bikeId){
   const bike=bikes.find(b=>b._docId===bikeId);
   if(!bike)return;
   const msgEl=document.getElementById('reenvio-msg-'+bikeId);
-  const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
-
-  // Se já tem UUID no D4Sign, reenviar link pelo D4Sign
-  if(bike.contratoConsigD4SignUUID){
-    if(!confirm('Reenviar o link de assinatura do contrato de consignação para o vendedor?'))return;
-    setMsg('Reenviando...');
-    try{
-      // Reenviar para cada signatário via D4Sign
-      const v=bike.vendedor||{};
-      const uuidDoc=bike.contratoConsigD4SignUUID;
-
-      // Reenviar via D4Sign
-      const data=await d4signReenviar(uuidDoc, v.email||'');
-      setMsg('✓ Link reenviado para '+v.email,'var(--green)');
-      await updateDoc(doc(db,'bikes',bikeId),{contratoConsigReenviadoEm:new Date().toISOString()});
-    }catch(e){
-      console.error('Erro reenvio:',e);
-      setMsg('Gerando novo contrato...');
-      await gerarContratoConsignacao(bikeId,'reenvio-msg-'+bikeId);
-    }
-    setTimeout(()=>{if(msgEl)msgEl.style.display='none';},6000);
-    return;
-  }
-
-  // Sem UUID — gerar contrato pela primeira vez
+  const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='block';msgEl.innerHTML=txt;msgEl.style.color=cor||'var(--text3)';}};
   const v=bike.vendedor||{};
+
   if(!v.email){
-    alert('Este cadastro não tem e-mail do vendedor. Não é possível gerar o contrato.');return;
+    alert('Este cadastro não tem e-mail do vendedor. Cadastre o e-mail para gerar o contrato.');return;
   }
-  if(!confirm(`Gerar e enviar contrato de consignação para ${v.nome||'o vendedor'} (${v.email})?`))return;
+
+  // Sempre gerar novo PDF com dados atualizados
+  const acao=bike.contratoConsigD4SignUUID?
+    confirm(`Gerar um contrato ATUALIZADO e enviar para ${v.nome||'o vendedor'} (${v.email})?
+
+Um novo PDF com os dados mais recentes será enviado para assinatura.`):
+    confirm(`Gerar e enviar contrato de consignação para ${v.nome||'o vendedor'} (${v.email})?`);
+
+  if(!acao)return;
+
+  // Limpar UUID antigo para forçar novo contrato
+  if(bike.contratoConsigD4SignUUID){
+    await updateDoc(doc(db,'bikes',bikeId),{
+      contratoConsigD4SignUUID:null,
+      contratoConsigStatus:'gerando_novo',
+    });
+    bike.contratoConsigD4SignUUID=null;
+  }
+
   await gerarContratoConsignacao(bikeId,'reenvio-msg-'+bikeId);
-  setTimeout(()=>{if(msgEl)msgEl.style.display='none';},6000);
+  setTimeout(()=>{if(msgEl)msgEl.style.display='none';},8000);
   await loadData();
   renderEstoque();
 };
 
 window.calcComissao=function(){
-  const valor=parseBRL(document.getElementById('n-valor')?.value);
+  const valor=Number(document.getElementById('n-valor')?.value||0);
   const aq=document.getElementById('n-aquisicao')?.value;
   const el=document.getElementById('com-preview');
   if(!el)return;
@@ -3953,7 +4009,7 @@ window.fecharCadastroRapido=function(){
 };
 
 window.calcComissaoRapido=function(){
-  const val=parseBRL(document.getElementById('rq-valor')?.value);
+  const val=Number(document.getElementById('rq-valor')?.value||0);
   const comEl=document.getElementById('rq-comissao');
   const prev=document.getElementById('rq-com-preview');
   if(!val){if(prev)prev.textContent='';return;}
@@ -3971,7 +4027,7 @@ window.calcComissaoRapido=function(){
 window.salvarCadastroRapido=async function(){
   const marca=document.getElementById('rq-marca')?.value.trim();
   const modelo=document.getElementById('rq-modelo')?.value.trim();
-  const valor=parseBRL(document.getElementById('rq-valor')?.value);
+  const valor=Number(document.getElementById('rq-valor')?.value||0);
   const vendedor=document.getElementById('rq-vendedor')?.value.trim();
   if(!marca||!modelo||!valor||!vendedor){alert('Preencha marca, modelo, valor e vendedor.');return;}
   const comissao=Number(document.getElementById('rq-comissao')?.value||0)||Math.min(Math.max(valor*COM_PERC,COM_PISO),COM_TETO);
