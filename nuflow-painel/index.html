@@ -227,41 +227,9 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <button class="tab" onclick="switchTab('dre')" id="tab-btn-dre">DRE</button>
   <button class="tab" onclick="switchTab('financeiro')" id="tab-btn-financeiro">Financeiro</button>
   <button class="tab" onclick="switchTab('nova')" id="tab-btn-nova">+ Cadastrar</button>
-  <button class="tab" onclick="abrirCalc()" id="tab-btn-calc" style="color:var(--amber)">🧮</button>
   <button class="tab" onclick="switchTab('captacao')" id="tab-btn-captacao">📥 Captação <span class="tab-count" id="count-captacao">0</span></button>
   <button class="tab" onclick="switchTab('clientes')" id="tab-btn-clientes">👥 Clientes</button>
   <button class="tab" onclick="abrirCadastroRapido()" id="tab-btn-rapido" style="color:var(--green)">⚡ Rápido</button>
-</div>
-
-<!-- Calculadora de Proposta -->
-<div id="modal-calc" style="display:none;position:fixed;inset:0;background:#000a;z-index:500;align-items:center;justify-content:center">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:1.5rem;width:100%;max-width:520px;margin:1rem;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-      <div>
-        <div style="font-size:16px;font-weight:600;color:var(--text)">🧮 Calculadora de Proposta</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px">Simule se uma consignação vale a pena</div>
-      </div>
-      <button onclick="fecharCalc()" style="background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer">×</button>
-    </div>
-    <div class="sell-grid">
-      <div class="fg"><label>Marca</label><input id="calc-marca" type="text" placeholder="ex: Specialized" list="marcas-list" oninput="calcSugerirPreco()"></div>
-      <div class="fg"><label>Modelo</label><input id="calc-modelo" type="text" placeholder="ex: Stumpjumper" list="modelos-list" oninput="calcSugerirPreco()"></div>
-      <div class="fg"><label>Versão</label><input id="calc-versao" type="text" placeholder="ex: Comp Carbon" list="versoes-list" oninput="calcSugerirPreco()"></div>
-      <div class="fg"><label>Ano</label><select id="calc-ano" onchange="calcSugerirPreco()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none">
-        <option value="">Qualquer ano</option>
-        <option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option>
-      </select></div>
-      <div class="fg"><label>Valor pedido pelo vendedor (R$)</label><input id="calc-valor-entrada" type="number" placeholder="ex: 12000" oninput="calcProposta()"></div>
-      <div class="fg"><label>Preço de venda pretendido (R$)</label><input id="calc-preco-venda" type="number" placeholder="ex: 15000" oninput="calcProposta()"></div>
-      <div class="fg"><label>% Comissão real <span style="font-size:10px;color:var(--text3)">(padrão: 8%)</span></label><input id="calc-com-pct" type="number" placeholder="8" min="0" max="100" step="0.1" value="8" oninput="calcProposta()"></div>
-      <div class="fg"><label>% Imposto real <span style="font-size:10px;color:var(--text3)">(padrão: 6%)</span></label><input id="calc-imp-pct" type="number" placeholder="6" min="0" max="100" step="0.1" value="6" oninput="calcProposta()"></div>
-    </div>
-    <div id="calc-fipe-ref" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem;margin-bottom:1rem;font-size:12px;font-family:'DM Mono',monospace"></div>
-    <div id="calc-resultado" style="display:none;border-radius:var(--radius-sm);padding:1rem;margin-top:.5rem"></div>
-    <div style="margin-top:1rem;display:flex;gap:8px">
-      <button class="btn btn-sm" onclick="fecharCalc()">Fechar</button>
-    </div>
-  </div>
 </div>
 
 <!-- Modal Cadastro Rápido -->
@@ -277,7 +245,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
     <div class="sell-grid">
       <div class="fg"><label>Marca *</label><input id="rq-marca" type="text" placeholder="ex: Specialized" list="marcas-list"></div>
       <div class="fg"><label>Modelo *</label><input id="rq-modelo" type="text" placeholder="ex: Stumpjumper"></div>
-      <div class="fg"><label>Valor acordado (R$) *</label><input id="rq-valor" type="number" placeholder="ex: 15000" oninput="calcComissaoRapido()"></div>
+      <div class="fg"><label>Valor acordado (R$) *</label><input id="rq-valor" type="text" inputmode="numeric" placeholder="ex: 15000 ou 22.500" oninput="calcComissaoRapido()"></div>
       <div class="fg"><label>Comissão (R$)</label>
         <input id="rq-comissao" type="number" placeholder="calculada automaticamente">
         <span id="rq-com-preview" style="font-size:11px;color:var(--green);font-family:'DM Mono',monospace;margin-top:3px;display:block"></span>
@@ -453,7 +421,6 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
         <option value="2026">2026</option>
         <option value="2025">2025</option>
       </select>
-      <button class="btn btn-sm btn-teal" onclick="exportarDREPDF()">📄 Exportar PDF</button>
     </div>
   </div>
 
@@ -478,7 +445,6 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
         <option value="2025">2025</option>
       </select>
       <button class="btn btn-sm btn-green" onclick="toggleFinForm()">+ Lançar</button>
-      <button class="btn btn-sm btn-danger" onclick="limparDuplicadosFinanceiro()" title="Deletar todos lançamentos de receita_venda de uma bike específica">🗑 Limpar duplicados</button>
     </div>
   </div>
 
@@ -557,7 +523,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <div class="fg"><label>Aquisição</label>
         <select id="n-aquisicao" onchange="toggleProprioBlock()"><option value="consignado">Consignado</option><option value="proprio">Compra própria</option></select>
       </div>
-      <div class="fg"><label>Valor acordado (R$) *</label><input id="n-valor" type="number" min="0" placeholder="ex: 15000" oninput="calcComissao()"></div>
+      <div class="fg"><label>Valor acordado (R$) *</label><input id="n-valor" type="text" inputmode="numeric" placeholder="ex: 15000 ou 22.500" oninput="calcComissao()"></div>
       <div class="fg"><label>Data de entrada *</label><input id="n-data" type="date"></div>
       <div class="fg"><label>Número de série</label><input id="n-serie" type="text" placeholder="ex: WTU123456"></div>
       <div class="fg gcol2"><label>Comissão calculada</label><div class="com-preview" id="com-preview">Preencha o valor</div></div>
@@ -603,7 +569,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 // Storage importado sob demanda
 
 const app = initializeApp({
@@ -615,27 +581,28 @@ const app = initializeApp({
   appId:"1:833518382862:web:76dfcca1cd8ad3bf2d715f"
 });
 const db=getFirestore(app);
-// Expose Firebase to non-module scripts
-window._db=db;
-window._fbCollection=collection;
-window._fbGetDocs=getDocs;
-window._fbAddDoc=addDoc;
-window._fbUpdateDoc=updateDoc;
-window._fbDeleteDoc=deleteDoc;
-window._fbDoc=doc;
-window._fbQuery=query;
-window._fbWhere=where;
-window._fbOrderBy=orderBy;
-window._fbQuery=query;
-window._fbWhere=where;
-window._fbOrderBy=orderBy;
 let storage=null; // inicializado sob demanda
 const bikesCol=collection(db,'bikes');
 let bikes=[];
-window._bikes=bikes;
 let charts={};
 
 const COM_PISO=700,COM_TETO=4500,COM_PERC=0.08;
+
+// Converte valor digitado em pt-BR ("22.500" ou "22500" ou "22,5") para número
+function parseBRL(str){
+  if(!str)return 0;
+  const s=String(str).trim();
+  // Se tem vírgula como decimal: "22.500,00" → 22500
+  if(s.includes(','))return Number(s.replace(/\./g,'').replace(',','.'));
+  // Se tem ponto como milhar: "22.500" → 22500 (4+ dígitos após ponto = milhar)
+  if(s.includes('.')){
+    const partes=s.split('.');
+    const ultima=partes[partes.length-1];
+    if(ultima.length===3)return Number(s.replace(/\./g,''));
+    return Number(s); // ponto decimal normal: "22.5"
+  }
+  return Number(s);
+}
 
 // ===== CHECK SECTIONS =====
 const CHECK_SECTIONS=[
@@ -756,7 +723,7 @@ async function loadData(){
   setSyncStatus('saving');
   try{
     const snap=await getDocs(bikesCol);
-    bikes=window._bikes=snap.docs.map(d=>({...d.data(),_docId:d.id}));
+    bikes=snap.docs.map(d=>({...d.data(),_docId:d.id}));
     setSyncStatus('ok');
   }catch(e){console.error(e);setSyncStatus('error');}
   // Renderiza primeiro, sem esperar limpeza
@@ -927,8 +894,8 @@ function renderEstoque(){
         </div>
         <div class="sell-grid">
           <div class="fg"><label>Nome do comprador *</label><input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>CPF comprador * <button type="button" onclick="buscarClientePorCPFVenda('${b._docId}')" style="font-size:10px;padding:2px 8px;background:var(--teal);color:#000;border:none;border-radius:4px;cursor:pointer;font-family:DM Sans,sans-serif;font-weight:600;margin-left:6px">🔍 Preencher</button></label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-
+          <div class="fg"><label>CPF comprador *</label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>RG</label><input type="text" id="sv-rg-${b._docId}" placeholder="ex: M1431941" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>E-mail comprador *</label><input type="email" id="sv-email-${b._docId}" placeholder="email@email.com" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Telefone / WhatsApp *</label><input type="text" id="sv-tel-${b._docId}" placeholder="(31) 9 9999-9999" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>CEP</label><input type="text" id="sv-cep-${b._docId}" placeholder="00000-000" oninput="salvarRascunhoVenda('${b._docId}')" onblur="buscaCEPVenda(this,'${b._docId}')"></div>
@@ -1219,23 +1186,6 @@ window.baixarBikeCheckPDF=async function(id){
     });
   }
 
-  // ══ BADGE DE GARANTIA ══
-  safe(28);
-  const dtGar=bike.dataVenda?new Date(new Date(bike.dataVenda+'T12:00:00').getTime()+90*24*60*60*1000).toLocaleDateString('pt-BR'):null;
-  if(dtGar){
-    // Card de garantia
-    fill(240,255,248);doc.roundedRect(ML,y,PW,22,3,3,'F');
-    stroke(...VD);doc.setLineWidth(0.5);doc.roundedRect(ML,y,PW,22,3,3,'S');
-    // Ícone + título
-    font('bold',10);rgb(...VD);doc.text('✓  GARANTIA MECÂNICA NUFLOW',ML+6,y+8);
-    font('normal',8);rgb(...CZ1);
-    doc.text('Esta bicicleta possui 90 dias de garantia mecânica contra defeitos de funcionamento,',ML+6,y+14);
-    doc.text('contados a partir da data de venda.  Válida até: '+dtGar+'.',ML+6,y+19);
-    // Barra lateral verde
-    fill(...VD);doc.rect(ML,y,3,22,'F');
-    y+=27;
-  }
-
   // ══ RODAPÉS ══
   const total=doc.getNumberOfPages();
   for(let i=1;i<=total;i++){
@@ -1265,14 +1215,6 @@ function gerarAcoesVendida(b){
   if(!b.bikeCheck&&dentro7) btns.push(`<button class="btn btn-sm btn-teal" onclick="abrirBikeCheck('${id}')">+ Bike Check</button>`);
   if(b.bikeCheck&&dv<30)    btns.push(`<button class="btn btn-sm btn-blue" onclick="baixarBikeCheckPDF('${id}')">📋 PDF <span style="font-size:10px;opacity:.7">(${diasRestBC}d)</span></button>`);
   if(b.nfURL&&!b.dadosLimpos) btns.push(`<button class="btn btn-sm btn-blue" onclick="window.open('${b.nfURL}','_blank')">📄 NF</button>`);
-  // Botão contrato: últimos 7 dias sem contrato
-  if(dentro7&&!b.contratoD4SignUUID){
-    btns.push(`<button class="btn btn-sm btn-teal" onclick="gerarContrato('${id}')">📄 Enviar contrato</button>`);
-    btns.push(`<span id="contrato-msg-${id}" style="display:none;font-size:12px;font-family:'DM Mono',monospace;color:var(--green)"></span>`);
-  } else if(b.contratoD4SignUUID){
-    const stLabel=b.contratoStatus==='assinado'?'✅ Assinado':'⏳ Aguardando assinatura';
-    btns.push(`<span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${stLabel}</span>`);
-  }
   return btns.join('');
 }
 
@@ -2292,7 +2234,6 @@ window.registrarVenda=async function(id){
     salvarCliente('comprador', {
       cpf: compradorCPF, nome: comprador, email: compradorEmail,
       tel: compradorTel, cidade: compradorCidade, estado: compradorEstado,
-      cep: g('sv-cep-'+id), endereco: g('sv-end-'+id),
       valorVenda, dataVenda, marca: bike.marca, modelo: bike.modelo, bikeId: id
     });
     limparRascunhoVenda(id);
@@ -2328,29 +2269,18 @@ window.salvarEdicaoVenda=async function(id){
 };
 
 window.estornarVenda=async function(id){
-  if(!confirm('Estornar esta venda?\nA bike voltará para o estoque e os lançamentos financeiros serão revertidos.'))return;
+  if(!confirm('Estornar esta venda?\nA bike voltará para o estoque.'))return;
   setSyncStatus('saving');
   try{
-    // Reverter lançamentos financeiros desta bike
-    const finSnap=await getDocs(query(collection(db,'financeiro'),where('bikeId','==',id),where('tipo','==','receita_venda')));
-    await Promise.all(finSnap.docs.map(d=>deleteDoc(doc(db,'financeiro',d.id))));
-    console.log('Estorno: removidos',finSnap.docs.length,'lançamentos financeiros');
-
     await updateDoc(doc(db,'bikes',id),{
       vendida:false,
       dataVenda:null,valorVenda:null,comissaoRecebida:null,
       canalVenda:null,comprador:null,compradorCPF:null,
-      compradorEmail:null,diasParaVender:null,
-      contratoD4SignUUID:null,contratoStatus:null
+      compradorEmail:null,diasParaVender:null
     });
-    // Recarregar tudo
     await loadData();
-    await loadFinanceiro();
-    renderFinanceiro();
-    renderVendidas();
     switchTab('estoque');
-    alert('Venda estornada! Lançamentos financeiros revertidos.');
-  }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao estornar: '+e.message);}
+  }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao estornar.');}
 };
 
 // ===== ZAPSIGN =====
@@ -2408,9 +2338,6 @@ async function d4signProxy(body){
 }
 
 async function d4signEnviarContrato(pdfBlob, nomeArquivo, signatarios, mensagem, setMsg){
-  const wait=ms=>new Promise(r=>setTimeout(r,ms));
-
-  // Converter PDF para base64
   const base64=await new Promise((res,rej)=>{
     const reader=new FileReader();
     reader.onload=()=>res(reader.result.split(',')[1]);
@@ -2418,43 +2345,33 @@ async function d4signEnviarContrato(pdfBlob, nomeArquivo, signatarios, mensagem,
     reader.readAsDataURL(pdfBlob);
   });
 
-  // ── PASSO 1: Upload ──
-  if(setMsg)setMsg('📤 Enviando PDF para D4Sign...');
-  const uploadData=await d4signProxy({action:'upload',fileBase64:base64,fileName:nomeArquivo,cofreUUID:D4SIGN_COFRE});
-  if(!uploadData.uuid) throw new Error('Falha no upload: '+(uploadData.error||JSON.stringify(uploadData).substring(0,200)));
+  // Passo 1: Upload
+  if(setMsg)setMsg('Enviando contrato...');
+  const uploadData=await d4signProxy({
+    action:'upload', fileBase64:base64,
+    fileName:nomeArquivo, cofreUUID:D4SIGN_COFRE
+  });
+  if(!uploadData.uuid) throw new Error('Upload falhou: '+(uploadData.error||JSON.stringify(uploadData)));
   const uuidDoc=uploadData.uuid;
-  console.log('[D4Sign] Upload OK — uuid:', uuidDoc);
 
-  // ── PASSO 2: Polling de status (roda no browser, sem timeout Netlify) ──
-  if(setMsg)setMsg('⏳ Aguardando D4Sign processar o documento...');
+  // Passo 2: Aguardar processamento (o D4Sign processa em background)
+  if(setMsg)setMsg('Aguardando D4Sign processar...');
   let pronto=false;
-  let ultimoStatusId='';
-  for(let i=0;i<30;i++){
-    await wait(4000);
+  for(let i=0;i<24;i++){
+    await new Promise(r=>setTimeout(r,5000));
     try{
-      const s=await d4signProxy({action:'status',uuidDoc});
-      console.log(`[D4Sign] Status check ${i+1} — statusId: ${s.statusId} | ready: ${s.ready} | keys: ${s.keys}`);
-      ultimoStatusId=s.statusId||'';
+      const s=await d4signProxy({action:'status', uuidDoc});
+      console.log('Status check',i+1,s);
       if(s.ready){pronto=true;break;}
-    }catch(e){
-      console.warn('[D4Sign] Erro status check:', e.message);
-    }
-    if(setMsg)setMsg('⏳ Processando... '+(i+1)*4+'s (statusId: '+ultimoStatusId+')');
+    }catch(e){}
+    if(setMsg)setMsg(`Processando... ${(i+1)*5}s`);
   }
+  if(!pronto) throw new Error('Timeout no processamento — tente reenviar');
 
-  // Se não confirmou ready mas tem statusId válido, tentar mesmo assim
-  if(!pronto&&ultimoStatusId&&ultimoStatusId!=='1'){
-    console.warn('[D4Sign] Timeout mas statusId='+ultimoStatusId+' — tentando prosseguir');
-    pronto=true;
-  }
-  if(!pronto) throw new Error('Timeout: D4Sign não processou em 120s. StatusId final: '+ultimoStatusId);
-
-  // ── PASSO 3: Signatários + envio ──
-  if(setMsg)setMsg('✍️ Cadastrando signatários...');
-  const result=await d4signProxy({action:'assinar',uuidDoc,signatarios,mensagem});
-  console.log('[D4Sign] Assinar result:', result);
-  if(result.error) throw new Error('Erro ao enviar: '+result.error);
-  if(setMsg)setMsg('✅ Contrato enviado! Os signatários receberão o e-mail em instantes.');
+  // Passo 3: Cadastrar signatários e enviar
+  if(setMsg)setMsg('Cadastrando signatários...');
+  const result=await d4signProxy({action:'assinar', uuidDoc, signatarios, mensagem});
+  if(result.error) throw new Error(result.error);
   return uuidDoc;
 }
 
@@ -2678,49 +2595,43 @@ window.gerarContrato=async function(id){
   if(!bike)return;
   const g=sid=>{const el=document.getElementById(sid);return el?el.value.trim():'';};
   const v=bike.vendedor||{};
-  // Prioriza dados do formulário aberto; fallback usa dados salvos na bike
   const dados={
-    comprador:g('sv-comp-'+id)||bike.comprador||'',
-    compradorCPF:g('sv-cpf-'+id)||bike.compradorCPF||'',
-    compradorRG:g('sv-rg-'+id)||bike.compradorRG||'',
-    compradorEmail:g('sv-email-'+id)||bike.compradorEmail||'',
-    compradorTel:g('sv-tel-'+id)||bike.compradorTel||'',
-    compradorEnd:g('sv-end-'+id)||bike.compradorEnd||'',
-    compradorCidade:g('sv-cidade-'+id)||bike.compradorCidade||'Belo Horizonte',
-    compradorEstado:g('sv-estado-'+id)||bike.compradorEstado||'MG',
-    compradorCEP:g('sv-cep-'+id)||bike.compradorCEP||'',
-    valorVenda:Number(g('sv-valor-'+id))||Number(bike.valorVenda||bike.precoEst||bike.valor),
-    valorSinal:Number(g('sv-sinal-'+id))||Number(bike.valorSinal||0),
-    formaPagamento:g('sv-pgto-'+id)||bike.formaPagamento||'PIX',
-    dataVenda:g('sv-data-'+id)||bike.dataVenda||new Date().toISOString().split('T')[0],
+    comprador:g('sv-comp-'+id),compradorCPF:g('sv-cpf-'+id),compradorRG:g('sv-rg-'+id),
+    compradorEmail:g('sv-email-'+id),compradorTel:g('sv-tel-'+id),
+    compradorEnd:g('sv-end-'+id),compradorCidade:g('sv-cidade-'+id)||'Belo Horizonte',
+    compradorEstado:g('sv-estado-'+id)||'MG',compradorCEP:g('sv-cep-'+id),
+    valorVenda:Number(g('sv-valor-'+id))||Number(bike.precoEst||bike.valor),
+    valorSinal:Number(g('sv-sinal-'+id))||0,
+    formaPagamento:g('sv-pgto-'+id)||'PIX',
+    dataVenda:g('sv-data-'+id)||new Date().toISOString().split('T')[0],
     marca:bike.marca||'',modelo:bike.modelo||'',versao:bike.versao||'',
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
     cor:bike.cor||'',ano:bike.ano||'',
     nfNumero:bike.nfNumero||'',temNF:bike.temNF||false,
     vendedorNome:v.nome||'',vendedorCPF:v.cpf||''
   };
-  if(!dados.comprador){alert('Nome do comprador não encontrado. Edite a venda e salve antes de gerar o contrato.');return;}
-  if(!dados.compradorEmail){alert('E-mail do comprador não encontrado. Edite a venda e adicione o e-mail antes de gerar o contrato.');return;}
+  if(!dados.comprador||!dados.compradorEmail){
+    alert('Preencha nome e e-mail do comprador antes de gerar o contrato.');return;
+  }
   const msgEl=document.getElementById('contrato-msg-'+id);
-  const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='block';msgEl.innerHTML=txt;msgEl.style.color=cor||'var(--text3)';}};
-  setMsg('⏳ Gerando PDF do contrato...');
+  const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
+  setMsg('Gerando PDF...');
   try{
     const pdfBlob=gerarPDFContrato('venda',dados);
-    const nomeArq='contrato_venda_'+dados.comprador.replace(/\s+/g,'_')+'_'+dados.dataVenda+'.pdf';
+    const nomeArq=`contrato_venda_${dados.comprador.replace(/\s+/g,'_')}_${dados.dataVenda}.pdf`;
     const sigVenda=[
       {email:dados.compradorEmail,act:'1',foreign:'0',certificadoicpbr:'0',
        assinatura_presencial:'0',docauth:'0',docauthandselfie:'0',embed_methodauth:'email'},
       {email:NUFLOW_EMAIL,act:'1',foreign:'0',certificadoicpbr:'0',
        assinatura_presencial:'0',docauth:'0',docauthandselfie:'0',embed_methodauth:'email'}
     ];
-    const msgVenda='Olá '+dados.comprador+'! Segue o contrato de compra da sua bike '+dados.marca+' '+dados.modelo+'. Por favor, assine para concluir a negociação. Nuflow Bikes.';
+    const msgVenda=`Olá ${dados.comprador}! Segue o contrato de compra da sua bike ${dados.marca} ${dados.modelo}. Por favor, assine para concluir a negociação. Nuflow Bikes.`;
     const uuidDoc=await d4signEnviarContrato(pdfBlob,nomeArq,sigVenda,msgVenda,setMsg);
     await updateDoc(doc(db,'bikes',id),{contratoD4SignUUID:uuidDoc,contratoStatus:'aguardando_assinatura',contratoGeradoEm:new Date().toISOString()});
-    setMsg('✅ Contrato enviado! '+dados.compradorEmail+' receberá o link para assinar em instantes.','var(--green)');
-    setTimeout(()=>{if(msgEl)msgEl.style.display='none';},8000);
+    setTimeout(()=>{if(msgEl)msgEl.style.display='none';},6000);
   }catch(e){
-    console.error('[D4Sign Venda]',e);
-    setMsg('❌ '+e.message+'<br><span style="font-size:10px;opacity:.7">Verifique o console (F12) para detalhes</span>','var(--red)');
+    console.error('Erro D4Sign:',e);
+    setMsg('Erro: '+e.message,'var(--red)');
   }
 };
 
@@ -2747,13 +2658,9 @@ window.gerarContratoConsignacao=async function(bikeId,msgElId){
     valor_multa:'R$ '+Math.round(valor*0.05).toLocaleString('pt-BR'),
     data_contrato:fmtD(bike.dataEntrada)
   };
-  // Melhorar setMsg para HTML
-  const _origSetMsg=setMsg;
-  const setMsgHtml=(txt,cor)=>{if(msgEl){msgEl.style.display='block';msgEl.innerHTML=txt;msgEl.style.color=cor||'var(--text3)';}};
   try{
-    setMsgHtml('⏳ Gerando PDF do contrato...');
     const pdfBlob=gerarPDFContrato('consignacao',dados);
-    const nomeArq='contrato_consignacao_'+(v.nome||'vendedor').replace(/\s+/g,'_')+'_'+(bike.dataEntrada||'2026')+'.pdf';
+    const nomeArq=`contrato_consignacao_${(v.nome||'vendedor').replace(/\s+/g,'_')}_${bike.dataEntrada||'2026'}.pdf`;
     const sigConsig=[
       {email:v.email,act:'1',foreign:'0',certificadoicpbr:'0',
        assinatura_presencial:'0',docauth:'0',docauthandselfie:'0',embed_methodauth:'email'},
@@ -2863,7 +2770,7 @@ window.reenviarContratoConsig=async function(bikeId){
 };
 
 window.calcComissao=function(){
-  const valor=Number(document.getElementById('n-valor')?.value||0);
+  const valor=parseBRL(document.getElementById('n-valor')?.value);
   const aq=document.getElementById('n-aquisicao')?.value;
   const el=document.getElementById('com-preview');
   if(!el)return;
@@ -3380,18 +3287,12 @@ window.salvarFinanceiro=async function(){
 
 window.excluirFinanceiro=async function(id){
   const item=finLancamentos.find(f=>f._docId===id);
-  if(item&&item.tipo==='receita_venda'){
-    alert('Lançamentos de venda são protegidos.\nPara reverter, use o botão "↩ Estornar" na aba Vendidas.');
-    return;
-  }
+  if(item&&item.tipo==='receita_venda'){alert('Lançamentos de venda são automáticos e não podem ser excluídos.');return;}
   if(!confirm('Excluir este lançamento?'))return;
-  try{
-    await deleteDoc(doc(db,'financeiro',id));
-    finLancamentos=finLancamentos.filter(f=>f._docId!==id);
-    renderFinanceiro();
-    if(typeof renderDRE==='function') renderDRE();
-  }catch(e){console.error(e);alert('Erro: '+e.message);}
+  try{await deleteDoc(doc(db,'financeiro',id));await loadFinanceiro();renderFinanceiro();}
+  catch(e){console.error(e);}
 };
+window.setFinTipoFiltro=function(tipo){_finTipoFiltro=tipo;renderFinanceiro();};
 
 function calcSaldos(){
   // Saldos iniciais já incorporam Nov/25 → Abr/26 (histórico completo)
@@ -3519,10 +3420,7 @@ function renderFinanceiro(){
               <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:14px;color:${isPos?'var(--green)':'var(--red)'}">
                 ${isPos?'+':'−'}${fmtRInt(Math.abs(f.valor))}
               </span>
-              ${f.tipo==='receita_venda'
-                ? '<span title="Lançamento automático — estorne na aba Vendidas" style="font-size:18px;cursor:default;opacity:.4">🔒</span>'
-                : '<button onclick="excluirFinanceiro(\'' + f._docId + '\')" title="Excluir lançamento" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);padding:2px 4px;border-radius:4px;line-height:1" onmouseover="this.style.color=\'var(--red)\'" onmouseout="this.style.color=\'var(--text3)\'">🗑</button>'
-              }
+
             </div>
           </div>`;
         }).join('')}
@@ -3551,90 +3449,6 @@ window.editarTipoFin=async function(id,novoTipo){
 
 window.renderFinanceiro=renderFinanceiro;
 
-// ===== BUSCA CLIENTE POR CPF NO FORMULÁRIO DE VENDA =====
-window.buscarClientePorCPFVenda = async function(bikeId) {
-  const cpfInput = document.getElementById('sv-cpf-'+bikeId);
-  if (!cpfInput) return;
-  const cpf = cpfInput.value.replace(/\D/g,'');
-  if (cpf.length < 11) { alert('Digite o CPF completo antes de buscar.'); return; }
-
-  // Busca no banco de clientes em memória primeiro
-  const cliente = _clientesData.find(c => (c.cpfClean||c.cpf||'').replace(/\D/g,'') === cpf);
-
-  if (!cliente) {
-    // Tenta buscar do Firebase direto
-    try {
-      const snap = await getDocs(query(collection(db,'clientes'), where('cpfClean','==',cpf)));
-      if (snap.empty) { alert('CPF não encontrado no banco de clientes.'); return; }
-      preencherFormularioVenda(bikeId, snap.docs[0].data());
-    } catch(e) {
-      alert('CPF não encontrado no banco de clientes.');
-    }
-    return;
-  }
-  preencherFormularioVenda(bikeId, cliente);
-};
-
-function preencherFormularioVenda(bikeId, c) {
-  const s = (id, val) => { const el = document.getElementById(id); if(el && val) el.value = val; };
-  s('sv-comp-'+bikeId, c.nome);
-  s('sv-email-'+bikeId, c.email);
-  s('sv-tel-'+bikeId, c.tel);
-  s('sv-cidade-'+bikeId, c.cidade);
-  s('sv-estado-'+bikeId, c.estado);
-  s('sv-cep-'+bikeId, c.cep);
-  s('sv-end-'+bikeId, c.endereco);
-  salvarRascunhoVenda(bikeId);
-  alert('✓ Dados de ' + (c.nome||'cliente') + ' preenchidos!');
-}
-
-
-
-// ===== TEMP: Limpar lançamentos receita_venda de uma bike =====
-window.limparDuplicadosFinanceiro=async function(){
-  // Busca todos receita_venda e mostra lista para escolher
-  try{
-    const snap=await getDocs(query(collection(db,"financeiro"),where("tipo","==","receita_venda")));
-    if(snap.empty){alert("Nenhum lançamento de receita_venda encontrado.");return;}
-    
-    // Agrupar por desc para mostrar ao usuário
-    const grupos={};
-    snap.docs.forEach(d=>{
-      const data=d.data();
-      const key=data.desc||data.descricao||'sem descrição';
-      if(!grupos[key]) grupos[key]={ids:[],count:0,valor:0};
-      grupos[key].ids.push(d.id);
-      grupos[key].count++;
-      grupos[key].valor+=Number(data.valor||0);
-    });
-    
-    // Montar mensagem
-    let msg="Lançamentos de receita_venda encontrados:\n\n";
-    let opcoes=[];
-    let i=1;
-    Object.entries(grupos).forEach(([desc,g])=>{
-      msg+=i+") "+desc+" ("+g.count+"x, R$"+Math.round(g.valor)+")\n";
-      opcoes.push({desc,ids:g.ids,count:g.count});
-      i++;
-    });
-    msg+="\nDigite o número do grupo para deletar TODOS os lançamentos desse grupo:";
-    
-    const escolha=prompt(msg);
-    if(!escolha)return;
-    const idx=parseInt(escolha)-1;
-    if(isNaN(idx)||idx<0||idx>=opcoes.length){alert("Opção inválida.");return;}
-    
-    const grupo=opcoes[idx];
-    if(!confirm("Deletar "+grupo.count+" lançamentos de:\n"+grupo.desc+"?"))return;
-    
-    await Promise.all(grupo.ids.map(id=>deleteDoc(doc(db,"financeiro",id))));
-    await loadFinanceiro();
-    renderFinanceiro();
-    alert("✓ "+grupo.count+" lançamentos deletados!");
-  }catch(e){alert("Erro: "+e.message);}
-};
-
-
 
 
 
@@ -3655,333 +3469,6 @@ const FIPE_MERGE_KEY='nuflow_fipe_merge';
 function getFipeMerge(){try{return JSON.parse(localStorage.getItem(FIPE_MERGE_KEY)||'{}');}catch(e){return {};}}
 
 // Normaliza nome do modelo aplicando merges salvos
-// ===== FIPE =====
-let _fipeOcultarComissao=false;
-
-window.toggleFipeComissao=function(){
-  _fipeOcultarComissao=!_fipeOcultarComissao;
-  const btn=document.getElementById('btn-fipe-comissao');
-  if(btn){
-    btn.textContent=_fipeOcultarComissao?'👁 Mostrar comissão':'👁 Ocultar comissão';
-    btn.style.borderColor=_fipeOcultarComissao?'var(--amber)':'var(--text3)';
-    btn.style.color=_fipeOcultarComissao?'var(--amber)':'var(--text3)';
-  }
-  renderFipe();
-};
-
-// ===== ANÁLISE =====
-function renderAnalise(){
-  renderProgressoMetas();
-  const at=bikes.filter(b=>!b.vendida);
-  const vv=bikes.filter(b=>b.vendida);
-  const metricsEl=document.getElementById('analise-metrics');
-  if(metricsEl) metricsEl.innerHTML=`
-    <div class="metric m-green"><div class="metric-label">Total vendidas</div><div class="metric-value">${vv.length}</div></div>
-    <div class="metric m-blue"><div class="metric-label">Em estoque</div><div class="metric-value">${at.length}</div></div>
-    <div class="metric m-amber"><div class="metric-label">Ticket médio</div><div class="metric-value sm">${vv.length?fmtRInt(Math.round(vv.reduce((s,b)=>s+Number(b.valorVenda||0),0)/vv.length)):'—'}</div></div>
-    <div class="metric m-purple"><div class="metric-label">Sem bike check</div><div class="metric-value" style="color:var(--amber)">${at.filter(b=>!b.bikeCheck).length}</div><div class="metric-sub">em estoque</div></div>
-  `;
-  destroyCharts();
-  if(!vv.length){
-    const ig=document.getElementById('insight-grid');
-    if(ig)ig.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📊</div><div class="empty-text">Registre vendas para ver análises</div></div>`;
-    return;
-  }
-  // Receita por mês
-  const pm={};
-  vv.forEach(b=>{if(!b.dataVenda)return;const k=b.dataVenda.substring(0,7);pm[k]=(pm[k]||0)+Number(b.comissaoRecebida||0);});
-  const meses=Object.keys(pm).sort();
-  buildChart('chart-comissao','bar',meses.map(m=>{const[y,mo]=m.split('-');return mo+'/'+y.substring(2);}),meses.map(m=>Math.round(pm[m])),{color:'#00e676',label:'Receita (R$)'});
-  buildChartSaldos();
-  // Tipos
-  const pt=cnt(vv,'tipo');
-  buildChart('chart-tipos','doughnut',Object.keys(pt),Object.values(pt),{colors:['#00e676','#4fc3f7','#ffab00','#ff5252','#b388ff','#26c6da'],label:'Vendas'});
-  // Marcas
-  const pm2=cnt(vv,'marca');
-  const top6=Object.entries(pm2).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  buildChart('chart-marcas','bar',top6.map(x=>x[0]),top6.map(x=>x[1]),{color:'#4fc3f7',label:'Vendas',horizontal:true});
-  // Tamanhos
-  const psTam={};
-  vv.forEach(b=>{const t=(b.tamanho||'').trim();const key=t&&t!=='Outro'?t:'Não inf.';psTam[key]=(psTam[key]||0)+1;});
-  const tsSorted=Object.entries(psTam).sort((a,b)=>b[1]-a[1]);
-  buildChart('chart-tamanhos','bar',tsSorted.map(x=>x[0]),tsSorted.map(x=>x[1]),{color:'#ffab00',label:'Vendas'});
-  // Tempo de venda
-  const vvPainel=vv.filter(b=>!b.historico&&b.diasParaVender!=null);
-  const cd=vvPainel.slice(-20);
-  if(cd.length) buildChart('chart-tempo','bar',cd.map(b=>`${b.marca} ${b.modelo}`),cd.map(b=>b.diasParaVender),{color:'#b388ff',label:'Dias',axisLabels:true});
-  // Financeiro
-  if(typeof finLancamentos!=='undefined'&&finLancamentos.length){
-    const saidas=finLancamentos.filter(f=>f.valor<0);
-    const porTipo={};
-    saidas.forEach(f=>{const label=(typeof FIN_TIPOS!=='undefined'&&FIN_TIPOS[f.tipo])?FIN_TIPOS[f.tipo].label:f.tipo;porTipo[label]=(porTipo[label]||0)+Math.abs(f.valor);});
-    if(Object.keys(porTipo).length) buildChart('chart-financeiro-tipo','doughnut',Object.keys(porTipo),Object.values(porTipo).map(Math.round),{colors:['#ab47bc','#26c6da','#ffab00','#42a5f5','#00e676','#ef5350','#78909c'],label:'R$'});
-    const porMesFin={};
-    finLancamentos.forEach(f=>{const mes=(f.data||'').substring(0,7);if(!mes)return;if(!porMesFin[mes])porMesFin[mes]={entradas:0,saidas:0};if(f.valor>0)porMesFin[mes].entradas+=f.valor;else porMesFin[mes].saidas+=Math.abs(f.valor);});
-    const mesesFin=Object.keys(porMesFin).sort();
-    if(mesesFin.length){
-      const labFin=mesesFin.map(m=>{const[y,mo]=m.split('-');return mo+'/'+y.substring(2);});
-      if(window.charts&&window.charts['chart-financeiro-mes'])window.charts['chart-financeiro-mes'].destroy();
-      const ctxFin=document.getElementById('chart-financeiro-mes')?.getContext('2d');
-      if(ctxFin){
-        if(!window.charts)window.charts={};
-        window.charts['chart-financeiro-mes']=new Chart(ctxFin,{type:'bar',
-          data:{labels:labFin,datasets:[
-            {label:'Entradas',data:mesesFin.map(m=>Math.round(porMesFin[m].entradas)),backgroundColor:'#00e676aa'},
-            {label:'Saídas',data:mesesFin.map(m=>Math.round(porMesFin[m].saidas)),backgroundColor:'#ef5350aa'}
-          ]},
-          options:{responsive:true,maintainAspectRatio:false,
-            plugins:{legend:{labels:{color:'#aaa'}}},
-            scales:{x:{ticks:{color:'#aaa'}},y:{ticks:{color:'#aaa',callback:v=>'R$'+Math.round(v/1000)+'k'}}}}
-        });
-      }
-    }
-  }
-  // Insights
-  const cc=cnt(vv,'canalVenda');
-  const mc=Object.entries(cc).sort((a,b)=>b[1]-a[1])[0];
-  const mt=Object.entries(pt).sort((a,b)=>b[1]-a[1])[0];
-  const mm=Object.entries(pm2).sort((a,b)=>b[1]-a[1])[0];
-  const diasMed=vvPainel.length?Math.round(vvPainel.reduce((s,b)=>s+b.diasParaVender,0)/vvPainel.length):0;
-  const ig=document.getElementById('insight-grid');
-  if(ig) ig.innerHTML=`
-    <div class="insight-card"><div class="insight-label">Canal top</div><div class="insight-value">${mc?mc[0]:'—'}</div><div class="insight-sub">${mc?mc[1]+' vendas':''}</div></div>
-    <div class="insight-card"><div class="insight-label">Tipo mais vendido</div><div class="insight-value">${mt?mt[0]:'—'}</div><div class="insight-sub">${mt?mt[1]+' vendas':''}</div></div>
-    <div class="insight-card"><div class="insight-label">Marca top</div><div class="insight-value">${mm?mm[0]:'—'}</div><div class="insight-sub">${mm?mm[1]+' vendas':''}</div></div>
-    <div class="insight-card"><div class="insight-label">Tempo médio</div><div class="insight-value">${diasMed||'—'}</div><div class="insight-sub">dias para vender</div></div>
-  `;
-}
-window.renderAnalise=renderAnalise;
-
-// ===== CALCULADORA DE PROPOSTA =====
-window.abrirCalc=function(){
-  const m=document.getElementById('modal-calc');
-  if(m)m.style.display='flex';
-  document.getElementById('calc-marca')?.focus();
-};
-window.fecharCalc=function(){
-  const m=document.getElementById('modal-calc');
-  if(m)m.style.display='none';
-  ['calc-marca','calc-modelo','calc-versao','calc-valor-entrada','calc-preco-venda'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.value='';
-  });
-  const r=document.getElementById('calc-resultado');if(r)r.style.display='none';
-  const f=document.getElementById('calc-fipe-ref');if(f)f.style.display='none';
-  const an=document.getElementById('calc-ano');if(an)an.value='';
-  const cp=document.getElementById('calc-com-pct');if(cp)cp.value='8';
-  const ip=document.getElementById('calc-imp-pct');if(ip)ip.value='6';
-};
-window.calcSugerirPreco=function(){
-  const marca=(document.getElementById('calc-marca')?.value||'').trim().toLowerCase();
-  const modelo=(document.getElementById('calc-modelo')?.value||'').trim().toLowerCase();
-  const versao=(document.getElementById('calc-versao')?.value||'').trim().toLowerCase();
-  const ano=(document.getElementById('calc-ano')?.value||'').trim();
-  const fipeEl=document.getElementById('calc-fipe-ref');
-  if(!fipeEl)return;
-  if(!marca&&!modelo){fipeEl.style.display='none';window.calcProposta();return;}
-
-  // Filtrar por marca+modelo obrigatório, versão e ano opcionais
-  let vendidas=bikes.filter(b=>b.vendida&&b.valorVenda);
-  if(marca) vendidas=vendidas.filter(b=>(b.marca||'').toLowerCase().includes(marca));
-  if(modelo) vendidas=vendidas.filter(b=>(b.modelo||'').toLowerCase().includes(modelo));
-  if(versao) vendidas=vendidas.filter(b=>(b.versao||'').toLowerCase().includes(versao));
-  if(ano)    vendidas=vendidas.filter(b=>(b.ano||'').toString()===ano);
-
-  if(!vendidas.length){
-    fipeEl.style.display='block';
-    fipeEl.innerHTML='📊 <span style="color:var(--amber)">Sem histórico para este filtro na FIPE Nuflow.</span>'
-      +(versao||ano?' Tente remover versão/ano para ver dados gerais.':'');
-    window.calcProposta();
-    return;
-  }
-
-  const precos=vendidas.map(b=>Number(b.valorVenda)).sort((a,b)=>a-b);
-  const min=precos[0],max=precos[precos.length-1],med=Math.round(precos.reduce((s,v)=>s+v,0)/precos.length);
-  const comissoes=vendidas.map(b=>Number(b.comissaoRecebida||0)).filter(v=>v>0);
-  const comMed=comissoes.length?Math.round(comissoes.reduce((s,v)=>s+v,0)/comissoes.length):null;
-
-  // Montar linha de tags para identificar quais filtros aplicados
-  const tags=[marca,modelo,versao,ano].filter(Boolean).map(t=>`<span style="background:var(--bg4);border-radius:10px;padding:1px 7px;font-size:10px">${t}</span>`).join(' ');
-
-  fipeEl.style.display='block';
-  fipeEl.innerHTML=
-    '📊 <strong>FIPE Nuflow</strong> — '+tags+' — <strong>'+vendidas.length+'</strong> venda(s)<br>'+
-    'Mínimo: <span style="color:var(--text2)">'+fmtRInt(min)+'</span>  ·  '+
-    'Médio: <span style="color:var(--green);font-weight:700">'+fmtRInt(med)+'</span>  ·  '+
-    'Máximo: <span style="color:var(--text2)">'+fmtRInt(max)+'</span>'+
-    (comMed?'  ·  Comissão média histórica: <span style="color:var(--amber)">'+fmtRInt(comMed)+'</span>':'');
-
-  // Sugerir preço de venda se campo vazio
-  const pvEl=document.getElementById('calc-preco-venda');
-  if(pvEl&&!pvEl.value)pvEl.value=med;
-  window.calcProposta();
-};
-window.calcProposta=function(){
-  const entrada=Number(document.getElementById('calc-valor-entrada')?.value||0);
-  const venda=Number(document.getElementById('calc-preco-venda')?.value||0);
-  const res=document.getElementById('calc-resultado');
-  if(!res)return;
-  if(!entrada||!venda){res.style.display='none';return;}
-  const comissao=calcCom(venda);
-  const imp=comissao*0.06;
-  const lucroLiq=comissao-imp;
-  const margemPct=((comissao/venda)*100).toFixed(1);
-  const viavel=comissao>=COM_PISO&&entrada<venda*0.93;
-  const cor=viavel?'var(--green)':'var(--red)';
-  const status=viavel?'✅ Negócio viável':'⚠️ Avaliar com cuidado';
-  res.style.display='block';
-  res.style.background=viavel?'rgba(0,200,100,0.07)':'rgba(200,50,50,0.07)';
-  res.style.border='1px solid '+cor;
-  res.style.borderRadius='var(--radius-sm)';
-  res.style.padding='1rem';
-  res.innerHTML=
-    '<div style="font-size:13px;font-weight:700;color:'+cor+';margin-bottom:.75rem">'+status+'</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;font-family:\'DM Mono\',monospace">'+
-    '<div><div style="color:var(--text3)">Entrada (vendedor)</div><div style="font-size:15px;font-weight:700;color:var(--text)">'+fmtRInt(entrada)+'</div></div>'+
-    '<div><div style="color:var(--text3)">Preço de venda</div><div style="font-size:15px;font-weight:700;color:var(--text)">'+fmtRInt(venda)+'</div></div>'+
-    '<div><div style="color:var(--text3)">Comissão Nuflow (8%)</div><div style="font-size:15px;font-weight:700;color:var(--amber)">'+fmtRInt(comissao)+'</div></div>'+
-    '<div><div style="color:var(--text3)">Margem sobre venda</div><div style="font-size:15px;font-weight:700;color:var(--amber)">'+margemPct+'%</div></div>'+
-    '<div><div style="color:var(--text3)">Imposto (6%)</div><div style="font-size:14px;font-weight:700;color:var(--red)">−'+fmtRInt(imp)+'</div></div>'+
-    '<div><div style="color:var(--text3)">Lucro líquido</div><div style="font-size:15px;font-weight:700;color:'+cor+'">'+fmtRInt(lucroLiq)+'</div></div>'+
-    '</div>'+
-    (!viavel?'<div style="margin-top:.75rem;font-size:11px;color:var(--text3)">💡 Preço mínimo de venda para viabilizar: '+fmtRInt(Math.ceil(entrada/0.87))+'</div>':'');
-};
-
-// ===== EXPORTAR DRE PDF =====
-window.exportarDREPDF=async function(){
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:'mm',format:'a4'});
-  const W=210,H=297,ML=15,MR=15,PW=180;
-  let y=15;
-  const VD=[18,160,86],VD2=[12,110,58];
-  const PTO=[25,25,25],CZ1=[70,70,70],CZ2=[140,140,140],CZ3=[210,210,210];
-  const fnt=(s,sz)=>{doc.setFont('helvetica',s);doc.setFontSize(sz);};
-  const rgb=(r,g,b)=>doc.setTextColor(r,g,b);
-  const fill=(r,g,b)=>doc.setFillColor(r,g,b);
-  const stroke=(r,g,b)=>doc.setDrawColor(r,g,b);
-  const safe=(n=10)=>{if(y+n>H-16){addPg();}};
-  const addPg=()=>{
-    stroke(...CZ3);doc.setLineWidth(0.2);doc.line(ML,H-10,W-MR,H-10);
-    fnt('normal',6.5);rgb(...CZ2);doc.text('Nuflow Bikes · CNPJ 38.559.372/0001-25',W/2,H-6,{align:'center'});
-    doc.addPage();y=15;
-  };
-
-  const anoFiltro=document.getElementById('dre-filtro-ano')?.value||'';
-  const dtEmissao=new Date().toLocaleDateString('pt-BR');
-
-  // Cabeçalho
-  fill(...VD);doc.rect(0,0,W,32,'F');
-  fill(...VD2);doc.rect(0,26,W,6,'F');
-  fnt('bold',16);rgb(255,255,255);doc.text('DEMONSTRATIVO DE RESULTADOS',ML,16);
-  fnt('normal',8.5);rgb(200,242,218);doc.text('DRE — '+(anoFiltro||'Todos os anos')+'  ·  Emitido em '+dtEmissao,ML,23);
-  fnt('bold',9);rgb(255,255,255);doc.text('NUFLOW BIKES',W-MR,16,{align:'right'});
-  fnt('normal',7);rgb(200,242,218);doc.text('gestao@nuflow.com.br',W-MR,23,{align:'right'});
-  y=42;
-
-  // Calcular dados
-  const todasVendas=bikes.filter(b=>b.vendida&&b.comissaoRecebida);
-  const vendasFilt=anoFiltro?todasVendas.filter(b=>(b.dataVenda||b.mes||'').startsWith(anoFiltro)):todasVendas;
-  const finFilt=(typeof finLancamentos!=='undefined'?finLancamentos:[]).filter(f=>!anoFiltro||f.data?.startsWith(anoFiltro));
-
-  let tGMV=0,tFat=0,tGastos=0;
-  const porMes={};
-  const MESES_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  vendasFilt.forEach(b=>{
-    const m=(b.dataVenda||b.mes||'').substring(0,7);
-    if(!m)return;
-    if(!porMes[m])porMes[m]={gmv:0,fat:0,qtd:0};
-    porMes[m].gmv+=Number(b.valorVenda||0);
-    porMes[m].fat+=Number(b.comissaoRecebida||0);
-    porMes[m].qtd++;
-    tGMV+=Number(b.valorVenda||0);
-    tFat+=Number(b.comissaoRecebida||0);
-  });
-  const chave=anoFiltro||'total';
-  if(typeof FAT_REAL!=='undefined'&&FAT_REAL[chave])tFat=FAT_REAL[chave];
-  let tImp=typeof IMPOSTO_REAL!=='undefined'&&IMPOSTO_REAL[anoFiltro]?IMPOSTO_REAL[anoFiltro]:tFat*0.06;
-  finFilt.forEach(f=>{if(f.valor<0&&f.tipo!=='retirada')tGastos+=Math.abs(f.valor);else if(f.valor>0&&f.tipo!=='retirada'&&f.tipo!=='entrada')tGastos-=Math.abs(f.valor);});
-  const tLucro=typeof LUCRO_REAL!=='undefined'&&LUCRO_REAL[chave]?LUCRO_REAL[chave]:(tFat-tImp-Math.max(tGastos,0));
-  const saldos=typeof calcSaldos==='function'?calcSaldos():{henrique:0,nuflow:0,caixa:0};
-
-  // Bloco resumo
-  const resumo=[
-    ['GMV Total',fmtRInt(tGMV),PTO],
-    ['Faturamento (comissões)',fmtRInt(tFat),[0,150,80]],
-    ['Impostos','-'+fmtRInt(tImp),[200,50,50]],
-    ['Gastos operacionais',tGastos>0?'-'+fmtRInt(tGastos):'R$ 0',[200,130,0]],
-    ['Lucro líquido',fmtRInt(tLucro),tLucro>=0?[0,150,80]:[200,50,50]],
-  ];
-  fill(248,248,248);doc.rect(ML,y,PW,resumo.length*13+8,'F');
-  stroke(...VD);doc.setLineWidth(0.5);doc.line(ML,y,ML,y+resumo.length*13+8);
-  stroke(...CZ3);doc.setLineWidth(0.2);doc.rect(ML,y,PW,resumo.length*13+8,'S');
-  fnt('bold',8);rgb(...VD2);doc.text('RESUMO DO PERÍODO',ML+6,y+6);y+=9;
-  resumo.forEach(([l,v,cor])=>{
-    fnt('normal',9);rgb(...CZ1);doc.text(l,ML+6,y+6);
-    fnt('bold',10);rgb(...cor);doc.text(v,W-MR,y+6,{align:'right'});
-    stroke(235,235,235);doc.setLineWidth(0.1);doc.line(ML+6,y+9,W-MR,y+9);
-    y+=13;
-  });
-  y+=8;
-
-  // Saldos dos sócios
-  safe(30);
-  fill(20,20,20);doc.rect(ML,y,PW,8,'F');
-  fnt('bold',8);rgb(...VD);doc.text('DISTRIBUIÇÃO — SALDOS REAIS',ML+6,y+5.5);y+=10;
-  [['💼 Caixa (22%)',fmtRInt(saldos.caixa),[38,198,218]],
-   ['👤 Henrique (39%)',fmtRInt(saldos.henrique),[155,89,182]],
-   ['🏢 Nuflow (39%)',fmtRInt(saldos.nuflow),[38,198,218]]
-  ].forEach(([l,v,cor],i)=>{
-    if(i%2===0){fill(252,252,252);doc.rect(ML,y-1,PW,10,'F');}
-    fnt('normal',9);rgb(...CZ1);doc.text(l,ML+6,y+6);
-    fnt('bold',10);rgb(...cor);doc.text(v,W-MR,y+6,{align:'right'});
-    y+=10;
-  });
-  y+=8;
-
-  // Tabela mensal
-  const mesesOrdenados=Object.keys(porMes).sort().reverse();
-  if(mesesOrdenados.length){
-    safe(14);
-    fill(20,20,20);doc.rect(ML,y,PW,8,'F');
-    fnt('bold',8);rgb(...VD);doc.text('RESULTADO POR MÊS',ML+6,y+5.5);y+=10;
-    // Cabeçalho
-    fill(245,250,247);doc.rect(ML,y,PW,7,'F');
-    stroke(...CZ3);doc.setLineWidth(0.1);doc.rect(ML,y,PW,7,'S');
-    const cols=[{l:'Mês',x:ML+4},{l:'Qt.',x:ML+66},{l:'GMV',x:ML+90},{l:'Faturamento',x:ML+128},{l:'Lucro',x:W-MR}];
-    cols.forEach(c=>{fnt('bold',7);rgb(...VD2);doc.text(c.l,c.x,y+5,{align:c.x===W-MR?'right':'left'});});
-    y+=8;
-    mesesOrdenados.forEach((m,idx)=>{
-      safe(8);
-      const d=porMes[m];
-      const [yr,mo]=m.split('-');
-      const aliq=m<'2026-03'?0.04:0.06;
-      const gastMes=finFilt.filter(f=>f.data?.startsWith(m)&&f.valor<0&&f.tipo!=='retirada').reduce((s,f)=>s+Math.abs(f.valor),0);
-      const lucroMes=d.fat-(d.fat*aliq)-gastMes;
-      if(idx%2===0){fill(252,252,252);doc.rect(ML,y-1,PW,8,'F');}
-      fnt('normal',8);rgb(...CZ1);
-      doc.text(MESES_PT[parseInt(mo)-1]+' '+yr,ML+4,y+4.5);
-      doc.text(String(d.qtd),ML+66,y+4.5);
-      doc.text(fmtRInt(d.gmv),ML+90,y+4.5);
-      doc.text(fmtRInt(d.fat),ML+128,y+4.5);
-      fnt('bold',8);rgb(...(lucroMes>=0?VD:[200,50,50]));
-      doc.text(fmtRInt(lucroMes),W-MR,y+4.5,{align:'right'});
-      stroke(238,238,238);doc.setLineWidth(0.1);doc.line(ML,y+7,W-MR,y+7);
-      y+=8;
-    });
-  }
-
-  // Rodapés
-  const total=doc.getNumberOfPages();
-  for(let i=1;i<=total;i++){
-    doc.setPage(i);
-    stroke(...CZ3);doc.setLineWidth(0.2);doc.line(ML,H-10,W-MR,H-10);
-    fnt('normal',6.5);rgb(...CZ2);
-    doc.text('Nuflow Bikes · CNPJ 38.559.372/0001-25 · gestao@nuflow.com.br · Nova Lima/MG',W/2,H-6,{align:'center'});
-    doc.text(i+' / '+total,W-MR,H-6,{align:'right'});
-    fnt('bold',7);rgb(...VD);doc.text('NUFLOW',ML,H-6);
-  }
-  doc.save('DRE_Nuflow_'+(anoFiltro||'completo')+'_'+dtEmissao.replace(/\//g,'-')+'.pdf');
-};
-
 function normalizarModelo(marca,modelo){
   marca=(marca||'').trim();
   modelo=(modelo||'').trim();
@@ -4455,7 +3942,7 @@ window.fecharCadastroRapido=function(){
 };
 
 window.calcComissaoRapido=function(){
-  const val=Number(document.getElementById('rq-valor')?.value||0);
+  const val=parseBRL(document.getElementById('rq-valor')?.value);
   const comEl=document.getElementById('rq-comissao');
   const prev=document.getElementById('rq-com-preview');
   if(!val){if(prev)prev.textContent='';return;}
@@ -4473,7 +3960,7 @@ window.calcComissaoRapido=function(){
 window.salvarCadastroRapido=async function(){
   const marca=document.getElementById('rq-marca')?.value.trim();
   const modelo=document.getElementById('rq-modelo')?.value.trim();
-  const valor=Number(document.getElementById('rq-valor')?.value||0);
+  const valor=parseBRL(document.getElementById('rq-valor')?.value);
   const vendedor=document.getElementById('rq-vendedor')?.value.trim();
   if(!marca||!modelo||!valor||!vendedor){alert('Preencha marca, modelo, valor e vendedor.');return;}
   const comissao=Number(document.getElementById('rq-comissao')?.value||0)||Math.min(Math.max(valor*COM_PERC,COM_PISO),COM_TETO);
@@ -4999,102 +4486,89 @@ window.capCopyDesc = function(btn) {
 
 <script>
 // ===== CLIENTES =====
-let _clientesData = [];
-let _clienteDetalhe = null;
-let _clienteBusca = '';
 // Auto-save clientes when registrarVenda or registrarBike is called
 // Clientes collection in Firebase: {cpf, nome, email, tel, cidade, estado, historico:[]}
 
 async function salvarCliente(tipo, dados) {
-  if (!dados.nome && !dados.cpf && !dados.email) return;
-  // Wait for Firebase to be ready
-  let attempts = 0;
-  while (!window._db && attempts < 20) { await new Promise(r=>setTimeout(r,200)); attempts++; }
-  if (!window._db) { console.warn('Firebase not ready'); return; }
+  // tipo: 'comprador' | 'vendedor'
+  // dados: {cpf, nome, email, tel, cidade, estado, ...bikeInfo}
+  if (!dados.cpf && !dados.email) return; // need at least one identifier
   try {
-    const _col=window._fbCollection, _getDocs=window._fbGetDocs, _addDoc=window._fbAddDoc;
-    const _updateDoc=window._fbUpdateDoc, _q=window._fbQuery, _where=window._fbWhere, _doc=window._fbDoc;
-    const clientesCol = _col(window._db, 'clientes');
-
-    let existingId = null, existingData = null;
-    if (dados.cpf && dados.cpf.length >= 11) {
-      const cpfClean = dados.cpf.replace(/\D/g,'');
-      const snap = await _getDocs(_q(clientesCol, _where('cpfClean','==',cpfClean)));
+    const {collection:_col, getDocs:_getDocs, addDoc:_addDoc, updateDoc:_updateDoc, query:_query, where:_where, doc:_doc}
+      = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const clientesCol = _col(db, 'clientes');
+    
+    // Search by CPF first, then email
+    let existingId = null;
+    let existingData = null;
+    
+    if (dados.cpf) {
+      const q = _query(clientesCol, _where('cpf', '==', dados.cpf));
+      const snap = await _getDocs(q);
       if (!snap.empty) { existingId = snap.docs[0].id; existingData = snap.docs[0].data(); }
     }
     if (!existingId && dados.email) {
-      const snap = await _getDocs(_q(clientesCol, _where('email','==',dados.email)));
+      const q = _query(clientesCol, _where('email', '==', dados.email));
+      const snap = await _getDocs(q);
       if (!snap.empty) { existingId = snap.docs[0].id; existingData = snap.docs[0].data(); }
     }
-    if (!existingId && dados.nome) {
-      const snap = await _getDocs(_q(clientesCol, _where('nome','==',dados.nome)));
-      if (!snap.empty) { existingId = snap.docs[0].id; existingData = snap.docs[0].data(); }
-    }
-
+    
     const entrada = {
       tipo: tipo,
       data: dados.dataVenda || dados.dataEntrada || new Date().toISOString().split('T')[0],
-      bike: ((dados.marca||'') + ' ' + (dados.modelo||'')).trim(),
-      valor: Number(dados.valorVenda || dados.valor || 0),
+      bike: (dados.marca||'') + ' ' + (dados.modelo||''),
+      valor: dados.valorVenda || dados.valor || 0,
       bikeId: dados.bikeId || ''
     };
-
+    
     if (existingId) {
+      // Update existing client
       const hist = existingData.historico || [];
       hist.push(entrada);
       const update = { historico: hist, atualizadoEm: new Date().toISOString() };
+      // Update contact info if newer
       if (dados.nome) update.nome = dados.nome;
       if (dados.email) update.email = dados.email;
-      if (dados.tel || dados.whatsapp) update.tel = dados.tel || dados.whatsapp;
+      if (dados.tel) update.tel = dados.tel;
       if (dados.cidade) update.cidade = dados.cidade;
       if (dados.estado) update.estado = dados.estado;
-      if (dados.cep) update.cep = dados.cep;
-      if (dados.endereco) update.endereco = dados.endereco;
-      await _updateDoc(_doc(window._db, 'clientes', existingId), update);
+      await _updateDoc(_doc(db, 'clientes', existingId), update);
     } else {
-      const cpfClean = (dados.cpf||'').replace(/\D/g,'');
+      // Create new client
       await _addDoc(clientesCol, {
         cpf: dados.cpf || '',
-        cpfClean: cpfClean,
         nome: dados.nome || '',
         email: dados.email || '',
-        tel: dados.tel || dados.whatsapp || '',
+        tel: dados.tel || '',
         cidade: dados.cidade || '',
         estado: dados.estado || '',
-        cep: dados.cep || '',
-        endereco: dados.endereco || '',
         historico: [entrada],
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString()
       });
     }
-    console.log('Cliente salvo:', tipo, dados.nome||dados.cpf);
-  } catch(e) { console.warn('Erro ao salvar cliente:', e.message); }
+  } catch(e) { console.warn('Erro ao salvar cliente:', e); }
 }
 
+// ===== RENDER CLIENTES =====
+let _clientesData = [];
+let _clienteDetalhe = null;
+let _clienteBusca = '';
 
 async function loadClientes() {
   const root = document.getElementById('clientes-root');
   if (root) root.innerHTML = '<div class="loading pulse">carregando...</div>';
-  // Aguarda Firebase ficar disponível
-  let attempts = 0;
-  while (!window._db && attempts < 30) { await new Promise(r=>setTimeout(r,200)); attempts++; }
-  if (!window._db) { if(root) root.innerHTML = '<div class="empty-state">Firebase não disponível. Recarregue a página.</div>'; return; }
   try {
-    // Busca simples sem filtro — mais compatível
-    const snap = await window._fbGetDocs(window._fbCollection(window._db,'clientes'));
+    const {collection:_col, getDocs:_getDocs, orderBy:_orderBy, query:_query}
+      = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const snap = await _getDocs(_query(_col(db,'clientes'), _orderBy('atualizadoEm','desc')));
     _clientesData = snap.docs.map(d => ({...d.data(), _id: d.id}));
-    _clientesData.sort((a,b)=>(b.atualizadoEm||'').localeCompare(a.atualizadoEm||''));
-    console.log('Clientes carregados:', _clientesData.length);
   } catch(e) {
-    console.warn('Erro ao carregar clientes:', e.message);
-    if(root) root.innerHTML = '<div class="empty-state">Erro ao carregar clientes: ' + e.message + '</div>';
+    console.warn('Erro ao carregar clientes:', e);
     _clientesData = [];
-    return;
   }
   drawClientes();
 }
-
 
 function drawClientes() {
   const root = document.getElementById('clientes-root');
@@ -5118,10 +4592,7 @@ function drawClientes() {
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:12px">';
   h += '<div><div style="font-size:20px;font-weight:600">👥 Clientes</div>';
   h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + _clientesData.length + ' cadastrados · ' + compradores + ' compradores · ' + vendedores + ' vendedores</div></div>';
-  h += '<div style="display:flex;gap:8px">';
-  h += '<button class="btn btn-primary btn-sm" onclick="loadClientes()">↻ Atualizar</button>';
-  h += '<button class="btn btn-sm btn-amber" onclick="migrarHistoricoClientes()" title="Importar histórico de todas as bikes/vendas existentes">📥 Importar histórico</button>';
-  h += '</div></div>';
+  h += '<button class="btn btn-primary btn-sm" onclick="loadClientes()">↻ Atualizar</button></div>';
   
   // Search bar
   h += '<div style="margin-bottom:1rem">';
@@ -5184,14 +4655,7 @@ function drawClienteDetalhe(c) {
   h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
   h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Dados de contato</div>';
   h += '<div style="display:flex;flex-direction:column;gap:8px">';
-  [
-    ['CPF', c.cpf],
-    ['E-mail', c.email],
-    ['Telefone', c.tel],
-    ['Cidade / Estado', c.cidade ? c.cidade + (c.estado?' / '+c.estado:'') : ''],
-    ['CEP', c.cep],
-    ['Endereço', c.endereco]
-  ].forEach(function(row) {
+  [['CPF', c.cpf], ['E-mail', c.email], ['Telefone', c.tel], ['Cidade', c.cidade + (c.estado?' / '+c.estado:'')]].forEach(function(row) {
     if (row[1]) h += '<div><div style="font-size:10px;color:var(--text3)">' + row[0] + '</div><div style="font-size:13px;font-weight:500">' + row[1] + '</div></div>';
   });
   h += '</div></div>';
@@ -5229,43 +4693,6 @@ function drawClienteDetalhe(c) {
 }
 
 window.renderClientes = function() { loadClientes(); };
-
-// ===== MIGRAR HISTÓRICO DE CLIENTES =====
-window.migrarHistoricoClientes = async function() {
-  if (!confirm('Isso vai importar o histórico de todas as bikes do sistema para os clientes. Continuar?')) return;
-  let totalProcessados = 0;
-  try {
-    const _b = window._bikes||[];
-    if (!_b.length) { alert('Carregue o painel antes de migrar.'); return; }
-    // Compradores (bikes vendidas)
-    for (const b of _b.filter(b => b.vendida && b.comprador)) {
-      await salvarCliente('comprador', {
-        cpf: b.compradorCPF||'', nome: b.comprador||'', email: b.compradorEmail||'',
-        tel: b.compradorTel||'', cidade: b.compradorCidade||'', estado: b.compradorEstado||'',
-        cep: b.compradorCEP||'', endereco: b.compradorEnd||'',
-        valorVenda: b.valorVenda||0, dataVenda: b.dataVenda||'',
-        marca: b.marca||'', modelo: b.modelo||'', bikeId: b._docId
-      });
-      totalProcessados++;
-    }
-    // Vendedores (todas as bikes com vendedor)
-    for (const b of _b.filter(b => b.vendedor && b.vendedor.nome)) {
-      const v = b.vendedor;
-      await salvarCliente('vendedor', {
-        cpf: v.cpf||'', nome: v.nome||'', email: v.email||'',
-        tel: v.tel||v.whatsapp||'', cidade: v.cidade||'', estado: v.estado||'',
-        valor: b.valor||0, dataEntrada: b.dataEntrada||'',
-        marca: b.marca||'', modelo: b.modelo||'', bikeId: b._docId
-      });
-      totalProcessados++;
-    }
-    await loadClientes();
-    alert('✓ Migração concluída! ' + totalProcessados + ' registros processados.');
-  } catch(e) {
-    console.error(e);
-    alert('Erro na migração: ' + e.message);
-  }
-};
 window.clienteDetalhe = function(id) { _clienteDetalhe = id; drawClientes(); };
 window.clienteSearch = function(v) { _clienteBusca = v; drawClientes(); };
 
@@ -5283,7 +4710,7 @@ window.buscarPorCPF = function() {
   if (!res) return;
   if (cpf.length < 11) { res.innerHTML = '<span style="color:var(--amber)">Digite um CPF completo (11 dígitos)</span>'; return; }
   const cpfFmt = cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');
-  const found = _clientesData.find(c => (c.cpfClean||c.cpf||'').replace(/\D/g,'') === cpf);
+  const found = _clientesData.find(c => (c.cpf||'').replace(/\D/g,'') === cpf);
   if (found) {
     const hist = found.historico || [];
     res.innerHTML = '<div style="background:var(--green-dim);border:1px solid var(--green);border-radius:8px;padding:12px">';
