@@ -3536,6 +3536,93 @@ const FIPE_MERGE_KEY='nuflow_fipe_merge';
 function getFipeMerge(){try{return JSON.parse(localStorage.getItem(FIPE_MERGE_KEY)||'{}');}catch(e){return {};}}
 
 // Normaliza nome do modelo aplicando merges salvos
+// ===== FIPE =====
+let _fipeOcultarComissao=false;
+window.toggleFipeComissao=function(){
+  _fipeOcultarComissao=!_fipeOcultarComissao;
+  const btn=document.getElementById('btn-fipe-comissao');
+  if(btn){
+    btn.textContent=_fipeOcultarComissao?'👁 Mostrar comissão':'👁 Ocultar comissão';
+    btn.style.borderColor=_fipeOcultarComissao?'var(--amber)':'var(--text3)';
+    btn.style.color=_fipeOcultarComissao?'var(--amber)':'var(--text3)';
+  }
+  renderFipe();
+};
+
+// ===== ANÁLISE =====
+function renderAnalise(){
+  renderProgressoMetas();
+  const at=bikes.filter(b=>!b.vendida);
+  const vv=bikes.filter(b=>b.vendida);
+  const metricsEl=document.getElementById('analise-metrics');
+  if(metricsEl) metricsEl.innerHTML=`
+    <div class="metric m-green"><div class="metric-label">Total vendidas</div><div class="metric-value">${vv.length}</div></div>
+    <div class="metric m-blue"><div class="metric-label">Em estoque</div><div class="metric-value">${at.length}</div></div>
+    <div class="metric m-amber"><div class="metric-label">Ticket médio</div><div class="metric-value sm">${vv.length?fmtRInt(Math.round(vv.reduce((s,b)=>s+Number(b.valorVenda||0),0)/vv.length)):'—'}</div></div>
+    <div class="metric m-purple"><div class="metric-label">Sem bike check</div><div class="metric-value" style="color:var(--amber)">${at.filter(b=>!b.bikeCheck).length}</div><div class="metric-sub">em estoque</div></div>
+  `;
+  destroyCharts();
+  if(!vv.length){
+    const ig=document.getElementById('insight-grid');
+    if(ig)ig.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📊</div><div class="empty-text">Registre vendas para ver análises</div></div>`;
+    return;
+  }
+  const pm={};
+  vv.forEach(b=>{if(!b.dataVenda)return;const k=b.dataVenda.substring(0,7);pm[k]=(pm[k]||0)+Number(b.comissaoRecebida||0);});
+  const meses=Object.keys(pm).sort();
+  buildChart('chart-comissao','bar',meses.map(m=>{const[y,mo]=m.split('-');return mo+'/'+y.substring(2);}),meses.map(m=>Math.round(pm[m])),{color:'#00e676',label:'Receita (R$)'});
+  buildChartSaldos();
+  const pt=cnt(vv,'tipo');
+  buildChart('chart-tipos','doughnut',Object.keys(pt),Object.values(pt),{colors:['#00e676','#4fc3f7','#ffab00','#ff5252','#b388ff','#26c6da'],label:'Vendas'});
+  const pm2=cnt(vv,'marca');
+  const top6=Object.entries(pm2).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  buildChart('chart-marcas','bar',top6.map(x=>x[0]),top6.map(x=>x[1]),{color:'#4fc3f7',label:'Vendas',horizontal:true});
+  const psTam={};
+  vv.forEach(b=>{const t=(b.tamanho||'').trim();const key=t&&t!=='Outro'?t:'Não inf.';psTam[key]=(psTam[key]||0)+1;});
+  const tsSorted=Object.entries(psTam).sort((a,b)=>b[1]-a[1]);
+  buildChart('chart-tamanhos','bar',tsSorted.map(x=>x[0]),tsSorted.map(x=>x[1]),{color:'#ffab00',label:'Vendas'});
+  const vvPainel=vv.filter(b=>!b.historico&&b.diasParaVender!=null);
+  const cd=vvPainel.slice(-20);
+  if(cd.length)buildChart('chart-tempo','bar',cd.map(b=>`${b.marca} ${b.modelo}`),cd.map(b=>b.diasParaVender),{color:'#b388ff',label:'Dias',axisLabels:true});
+  if(typeof finLancamentos!=='undefined'&&finLancamentos.length){
+    const saidas=finLancamentos.filter(f=>f.valor<0);
+    const porTipo={};
+    saidas.forEach(f=>{const label=(FIN_TIPOS[f.tipo]||{label:f.tipo}).label;porTipo[label]=(porTipo[label]||0)+Math.abs(f.valor);});
+    if(Object.keys(porTipo).length)buildChart('chart-financeiro-tipo','doughnut',Object.keys(porTipo),Object.values(porTipo).map(Math.round),{colors:['#ab47bc','#26c6da','#ffab00','#42a5f5','#00e676','#ef5350','#78909c'],label:'R$'});
+    const porMesFin={};
+    finLancamentos.forEach(f=>{const mes=(f.data||'').substring(0,7);if(!mes)return;if(!porMesFin[mes])porMesFin[mes]={entradas:0,saidas:0};if(f.valor>0)porMesFin[mes].entradas+=f.valor;else porMesFin[mes].saidas+=Math.abs(f.valor);});
+    const mesesFin=Object.keys(porMesFin).sort();
+    if(mesesFin.length){
+      const labFin=mesesFin.map(m=>{const[y,mo]=m.split('-');return mo+'/'+y.substring(2);});
+      if(window.charts&&window.charts['chart-financeiro-mes'])window.charts['chart-financeiro-mes'].destroy();
+      const ctxFin=document.getElementById('chart-financeiro-mes')?.getContext('2d');
+      if(ctxFin){
+        if(!window.charts)window.charts={};
+        window.charts['chart-financeiro-mes']=new Chart(ctxFin,{type:'bar',
+          data:{labels:labFin,datasets:[
+            {label:'Entradas',data:mesesFin.map(m=>Math.round(porMesFin[m].entradas)),backgroundColor:'#00e676aa'},
+            {label:'Saídas',data:mesesFin.map(m=>Math.round(porMesFin[m].saidas)),backgroundColor:'#ef5350aa'}
+          ]},
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#aaa'}}},scales:{x:{ticks:{color:'#aaa'}},y:{ticks:{color:'#aaa',callback:v=>'R$'+Math.round(v/1000)+'k'}}}}
+        });
+      }
+    }
+  }
+  const cc=cnt(vv,'canalVenda');
+  const mc=Object.entries(cc).sort((a,b)=>b[1]-a[1])[0];
+  const mt=Object.entries(pt).sort((a,b)=>b[1]-a[1])[0];
+  const mm=Object.entries(pm2).sort((a,b)=>b[1]-a[1])[0];
+  const diasMed=vvPainel.length?Math.round(vvPainel.reduce((s,b)=>s+b.diasParaVender,0)/vvPainel.length):0;
+  const ig=document.getElementById('insight-grid');
+  if(ig) ig.innerHTML=`
+    <div class="insight-card"><div class="insight-label">Canal top</div><div class="insight-value">${mc?mc[0]:'—'}</div><div class="insight-sub">${mc?mc[1]+' vendas':''}</div></div>
+    <div class="insight-card"><div class="insight-label">Tipo mais vendido</div><div class="insight-value">${mt?mt[0]:'—'}</div><div class="insight-sub">${mt?mt[1]+' vendas':''}</div></div>
+    <div class="insight-card"><div class="insight-label">Marca top</div><div class="insight-value">${mm?mm[0]:'—'}</div><div class="insight-sub">${mm?mm[1]+' vendas':''}</div></div>
+    <div class="insight-card"><div class="insight-label">Tempo médio</div><div class="insight-value">${diasMed||'—'}</div><div class="insight-sub">dias para vender</div></div>
+  `;
+}
+window.renderAnalise=renderAnalise;
+
 function normalizarModelo(marca,modelo){
   marca=(marca||'').trim();
   modelo=(modelo||'').trim();
