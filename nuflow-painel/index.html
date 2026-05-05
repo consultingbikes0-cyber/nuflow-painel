@@ -260,7 +260,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
         </select>
       </div>
       <div class="fg"><label>Ano</label>
-        <select id="rq-ano" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option></select>
+        <select id="rq-ano" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option><option>2017</option><option>2016</option><option>2015</option><option>2014</option><option>2013</option><option>2012</option></select>
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-top:1rem">
@@ -515,7 +515,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <div class="fg"><label>Marca *</label><input id="n-marca" type="text" placeholder="Trek, Specialized, Santa Cruz..."></div>
       <div class="fg"><label>Modelo *</label><input id="n-modelo" type="text" placeholder="Slash, Enduro, Megatower..."></div>
       <div class="fg"><label>Versão</label><input id="n-versao" type="text" placeholder="ex: GX Eagle, S-Works..."></div>
-      <div class="fg"><label>Ano</label><select id="n-ano" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option></select></div>
+      <div class="fg"><label>Ano</label><select id="n-ano" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option><option>2017</option><option>2016</option><option>2015</option><option>2014</option><option>2013</option><option>2012</option></select></div>
       <div class="fg"><label>Tamanho *</label><input id="n-tamanho" type="text" placeholder="S, M, L, XL..."></div>
       <div class="fg"><label>Tipo</label>
         <select id="n-tipo"><option value="">Selecione</option><option>Trail</option><option>Enduro</option><option>Downhill</option><option>E-MTB</option><option>XC</option><option>Speed</option><option>Gravel</option><option>Urban</option></select>
@@ -880,10 +880,7 @@ function renderEstoque(){
           <div class="fg"><label>Marca</label><input type="text" id="eb-marca-${b._docId}" value="${b.marca||''}"></div>
           <div class="fg"><label>Modelo</label><input type="text" id="eb-modelo-${b._docId}" value="${b.modelo||''}"></div>
           <div class="fg"><label>Versão</label><input type="text" id="eb-versao-${b._docId}" value="${b.versao||''}"></div>
-          <div class="fg"><label>Ano</label><select id="eb-ano-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
-            <option value="">—</option>
-            ${[2025,2024,2023,2022,2021,2020,2019,2018].map(a=>`<option value="${a}" ${b.ano==a?'selected':''}>${a}</option>`).join('')}
-          </select></div>
+          <div class="fg"><label>Ano</label><select id="eb-ano-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option><option>2017</option><option>2016</option><option>2015</option><option>2014</option><option>2013</option><option>2012</option></select></div>
           <div class="fg"><label>Tipo</label><select id="eb-tipo-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
             ${['Trail','E-MTB','Enduro','XC','DH','Gravel','Outro'].map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}
           </select></div>
