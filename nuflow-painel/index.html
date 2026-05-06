@@ -952,7 +952,36 @@ window.renderEstoque=renderEstoque;
 // ===== VENDIDAS =====
 window.baixarBikeCheckPDF=async function(id){
   const bike=bikes.find(b=>b._docId===id);
-  if(!bike||!bike.bikeCheck){alert('Bike check não encontrado.');return;}
+  if(!bike){alert('Bike não encontrada.');return;}
+
+  // Ler checklist do formulário se estiver aberto, senão usa Firebase
+  const temFormularioAberto=!!document.getElementById('cond-quadro');
+  const bc={};
+  const sps={};
+  if(temFormularioAberto){
+    CHECK_SECTIONS.forEach(sec=>sec.items.forEach(item=>{
+      const condEl=document.getElementById('cond-'+item.key);
+      const specEl=document.getElementById('spec-'+item.key);
+      bc[item.key]=condEl?condEl.value:'Não verificado';
+      if(specEl&&specEl.value)sps[item.key]=specEl.value;
+    }));
+  } else {
+    if(!bike.bikeCheck){alert('Bike check não encontrado. Salve o laudo antes de exportar.');return;}
+    Object.assign(bc,bike.bikeCheck||{});
+    Object.assign(sps,bike.specs||{});
+  }
+  // Nota do slider ou Firebase
+  const sliderEl=document.getElementById('nota-slider');
+  const notaOverride=sliderEl?parseFloat(sliderEl.value):null;
+  // Fotos: memória (recém tiradas) + Firebase
+  const fotosMemAtual=fotosMemoria[id]||{};
+  const fotosFirebase=bike.fotos&&typeof bike.fotos==='object'?bike.fotos:{};
+  // Montar fotoMap com URLs do Firebase + previews locais
+  const fotoMapMerged={...fotosFirebase};
+  // Para fotos em memória, criar URL temporária
+  Object.entries(fotosMemAtual).forEach(([key,file])=>{
+    if(file)fotoMapMerged[key]=URL.createObjectURL(file);
+  });
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   const W=210,H=297,ML=20,MR=20,PW=170;
@@ -975,7 +1004,7 @@ window.baixarBikeCheckPDF=async function(id){
   const newPage=()=>{doc.addPage();pg++;y=20;};
   const safe=(n=10)=>{if(y+n>H-18){newPage();}};
 
-  const nota=bike.notaFinal!=null?bike.notaFinal:(bike.notaAuto!=null?bike.notaAuto:null);
+  const nota=notaOverride!==null&&!isNaN(notaOverride)?notaOverride:(bike.notaFinal!=null?bike.notaFinal:(bike.notaAuto!=null?bike.notaAuto:null));
   const notaCor=nota==null?CZ2:(nota>=8?VD:nota>=6?[200,130,0]:[200,50,50]);
   const nomeBike=((bike.marca||'')+' '+(bike.modelo||'')+' '+(bike.versao||'')).trim();
 
@@ -1033,7 +1062,7 @@ window.baixarBikeCheckPDF=async function(id){
   y+=Math.ceil(campos.length/nc)*13+6;
 
   // ══ FOTOS ══
-  const fotoMap=bike.fotos&&typeof bike.fotos==='object'&&!Array.isArray(bike.fotos)?bike.fotos:{};
+  const fotoMap=fotoMapMerged;
   const FOTO_ORDEM=[
     {key:'bike_inteira',label:'Bike completa'},
     {key:'cockpit',label:'Cockpit'},
@@ -1127,7 +1156,7 @@ window.baixarBikeCheckPDF=async function(id){
   doc.setLineWidth(0.2);stroke(...CZ3);doc.rect(ML,y,PW,6,'S');
   font('bold',7.5);rgb(...VD3);doc.text('CHECKLIST DE COMPONENTES',ML+5,y+4.2);y+=10;
 
-  const bc=bike.bikeCheck||{},sps=bike.specs||{};
+  // bc e sps já coletados acima (formulário ou Firebase)
   const COND_INFO={
     'Ótimo':         {dot:[0,170,80], bg:[235,252,240],txt:[0,130,60]},
     'Bom':           {dot:[60,180,90],bg:[240,252,243],txt:[40,150,70]},
@@ -1712,7 +1741,7 @@ window.abrirBikeCheck=function(id){
       ${notaHTML}
       <div class="form-actions" style="margin-top:1.5rem">
         <button class="btn btn-primary" onclick="salvarBikeCheck('${id}')">Salvar bike check</button>
-        <button class="btn btn-sm btn-teal" onclick="exportarBikeCheckPDF('${id}')">📄 Exportar PDF</button>
+        <button class="btn btn-sm btn-teal" onclick="baixarBikeCheckPDF('${id}')">📄 Exportar PDF</button>
         <button class="btn btn-sm btn-amber" onclick="salvarRascunho('${id}')">💾 Salvar rascunho</button>
         <button class="btn" onclick="fecharBikeCheck()">Cancelar</button>
         <span class="form-msg" id="bc-msg" style="display:none">✓ Salvo!</span>
@@ -1838,180 +1867,249 @@ function atualizarCirculo(n){
   if(num)num.textContent=n;
 }
 
-window.exportarBikeCheckPDF=function(id){
+window.exportarBikeCheckPDF=async function(id){
   const bike=bikes.find(b=>b._docId===id);
   if(!bike){alert('Bike não encontrada.');return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
-  const W=210,ML=15,MR=15,MT=18,lw=W-ML-MR;
+  const W=210,H=297,ML=15,MR=15,MT=18,lw=W-ML-MR;
   let y=MT;
-  const VERDE='1A6B3C',CINZA='555555';
 
-  // Coletar dados do formulário (ou do Firebase se já salvo)
   const g=sid=>{const el=document.getElementById(sid);return el?el.value.trim():'';};
-  const bc=bike.bikeCheck||{};
-  const specs=bike.specs||{};
 
-  // Cabeçalho
-  doc.setFillColor(26,107,60);
-  doc.rect(0,0,W,22,'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(14);
+  // Ler checklist do formulário HTML — fallback para Firebase
+  const bc={},specs={};
+  CHECK_SECTIONS.forEach(sec=>sec.items.forEach(item=>{
+    const condEl=document.getElementById('cond-'+item.key);
+    const specEl=document.getElementById('spec-'+item.key);
+    bc[item.key]=condEl?condEl.value:(bike.bikeCheck?.[item.key]||'Não verificado');
+    const specVal=specEl?specEl.value:(bike.specs?.[item.key]||'');
+    if(specVal)specs[item.key]=specVal;
+  }));
+
+  const danos=g('bc-danos')||bike.danos||'';
+  const obsReparo=g('bc-reparo')||bike.obsReparo||'';
+
+  // Nota do slider ou Firebase
+  const sliderEl=document.getElementById('nota-slider');
+  const nota=sliderEl?parseFloat(sliderEl.value):(bike.notaFinal!=null?bike.notaFinal:(bike.notaAuto!=null?bike.notaAuto:null));
+
+  // ── CABEÇALHO ──
+  doc.setFillColor(18,160,86);doc.rect(0,0,W,22,'F');
+  doc.setFillColor(12,110,58);doc.rect(0,17,W,5,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(14);
   doc.text('NUFLOW BIKES — LAUDO TÉCNICO',ML,13);
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(9);
-  doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`,W-MR,13,{align:'right'});
+  doc.setFont('helvetica','normal');doc.setFontSize(8.5);
+  doc.text('Data: '+new Date().toLocaleDateString('pt-BR'),W-MR,13,{align:'right'});
   y=30;
 
-  // Dados da bike
-  doc.setTextColor(0,0,0);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(13);
-  doc.text(`${bike.marca||''} ${bike.modelo||''} ${bike.versao||''}`,ML,y);
-  y+=6;
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(9);
-  doc.setTextColor(80,80,80);
-  const infos=[
-    bike.tipo&&`Tipo: ${bike.tipo}`,
-    bike.tamanho&&`Tamanho: ${bike.tamanho}`,
-    bike.serie&&`Série: ${bike.serie}`,
-    bike.dataEntrada&&`Entrada: ${new Date(bike.dataEntrada+'T12:00:00').toLocaleDateString('pt-BR')}`
-  ].filter(Boolean).join('   |   ');
-  doc.text(infos,ML,y);
-  y+=4;
-  doc.setDrawColor(200,200,200);
-  doc.line(ML,y,W-MR,y);
-  y+=6;
+  // ── IDENTIFICAÇÃO ──
+  doc.setTextColor(20,20,20);doc.setFont('helvetica','bold');doc.setFontSize(14);
+  doc.text(((bike.marca||'')+' '+(bike.modelo||'')+' '+(bike.versao||'')).trim(),ML,y);y+=6;
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(80,80,80);
+  const infos=[bike.tipo&&'Tipo: '+bike.tipo,bike.tamanho&&'Tam: '+bike.tamanho,bike.ano&&'Ano: '+bike.ano,bike.serie&&'Série: '+bike.serie].filter(Boolean).join('   ·   ');
+  if(infos){doc.text(infos,ML,y);y+=5;}
+  doc.setDrawColor(200,200,200);doc.line(ML,y,W-MR,y);y+=5;
 
-  // Nota
-  const nota=(bike.notaFinal!=null?bike.notaFinal:(bike.notaAuto!=null?bike.notaAuto:(g('nota-manual-'+id)||null)));
-  if(nota!==null&&nota!==''){
-    doc.setFillColor(26,107,60);
-    doc.roundedRect(ML,y-4,28,12,2,2,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(14);
-    doc.text(String(nota),ML+14,y+4,{align:'center'});
-    doc.setTextColor(26,107,60);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(9);
-    doc.text('Nota técnica (0-10)',ML+31,y+2);
+  // ── NOTA ──
+  if(nota!=null&&nota!==''){
+    const notaCor=nota>=8?[0,160,80]:nota>=6?[200,140,0]:[200,50,50];
+    doc.setFillColor(...notaCor);doc.roundedRect(ML,y-2,26,11,2,2,'F');
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);
+    doc.text(String(nota),ML+13,y+5.5,{align:'center'});
+    doc.setTextColor(...notaCor);doc.setFont('helvetica','bold');doc.setFontSize(9);
+    const nl=nota>=9?'Excelente':nota>=8?'Muito bom':nota>=7?'Bom':nota>=6?'Regular':'Atenção';
+    doc.text(nl,ML+30,y+3.5);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(120,120,120);
+    doc.text('Avaliação técnica Nuflow Bikes',ML+30,y+8.5);
     y+=16;
   }
 
-  // Seções do bike check
-  const SECOES=[
-    {titulo:'Estrutura',itens:['quadro','suspensao_d','suspensao_t','canote']},
-    {titulo:'Transmissão',itens:['cassete','corrente','pedivela','cambio_t','cambio_d','comando']},
-    {titulo:'Freios',itens:['freio_d','freio_t','disco_d','disco_t','pastilha_d','pastilha_t']},
-    {titulo:'Cockpit',itens:['guidao','stem','mesa','grip']},
-    {titulo:'Rodas',itens:['aro_d','aro_t','pneu_d','pneu_t','cubo_d','cubo_t']},
-    {titulo:'E-MTB',itens:['motor','bateria','display','controlador']},
-    {titulo:'Geral',itens:['rolamentos','retentores','parafusos']}
+  // ── FOTOS ──
+  // Combinar fotos em memória (formulário aberto) + Firebase
+  const fotoMemoria=fotosMemoria[id]||{};
+  const fotoFirebase=bike.fotos&&typeof bike.fotos==='object'&&!Array.isArray(bike.fotos)?bike.fotos:{};
+  const FOTO_ORDEM=[
+    {key:'bike_inteira',label:'Bike completa'},
+    {key:'cockpit',label:'Cockpit'},
+    {key:'roda_d',label:'Roda dianteira'},
+    {key:'roda_t',label:'Roda traseira'},
+    {key:'relacao',label:'Relação'},
+    {key:'suspensao_d',label:'Suspensão'},
+    {key:'motor',label:'Motor'},
+    {key:'bateria',label:'Bateria'},
+    {key:'danos',label:'Danos'},
   ];
 
-  const COR_COND={
-    'Ótimo':[0,160,80],'Bom':[80,160,0],'Regular':[220,150,0],
-    'Precisa trocar':[200,50,50],'Não verificado':[160,160,160],'':[160,160,160]
-  };
-
-  const LABEL_ITEM={
-    quadro:'Quadro',suspensao_d:'Suspensão dianteira',suspensao_t:'Suspensão traseira',canote:'Canote',
-    cassete:'Cassete',corrente:'Corrente',pedivela:'Pedivela/Coroa',cambio_t:'Câmbio traseiro',
-    cambio_d:'Câmbio dianteiro',comando:'Comando de câmbio',
-    freio_d:'Freio dianteiro',freio_t:'Freio traseiro',disco_d:'Disco dianteiro',
-    disco_t:'Disco traseiro',pastilha_d:'Pastilha dianteira',pastilha_t:'Pastilha traseira',
-    guidao:'Guidão',stem:'Stem',mesa:'Mesa',grip:'Grips',
-    aro_d:'Aro dianteiro',aro_t:'Aro traseiro',pneu_d:'Pneu dianteiro',pneu_t:'Pneu traseiro',
-    cubo_d:'Cubo dianteiro',cubo_t:'Cubo traseiro',
-    motor:'Motor',bateria:'Bateria',display:'Display',controlador:'Controlador',
-    rolamentos:'Rolamentos',retentores:'Retentores',parafusos:'Parafusos gerais'
-  };
-
-  SECOES.forEach(sec=>{
-    const itensComDados=sec.itens.filter(k=>{
-      const cond=bc['cond_'+k]||bc[k]||'';
-      const spec=specs[k]||'';
-      return cond||spec;
-    });
-    if(!itensComDados.length)return;
-
-    if(y>260){doc.addPage();y=MT;}
-    // Título da seção
-    doc.setFillColor(240,247,243);
-    doc.rect(ML,y-3,lw,7,'F');
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(9);
-    doc.setTextColor(26,107,60);
-    doc.text(sec.titulo.toUpperCase(),ML+2,y+2);
-    y+=9;
-
-    itensComDados.forEach(k=>{
-      if(y>270){doc.addPage();y=MT;}
-      const cond=bc['cond_'+k]||bc[k]||'Não verificado';
-      const spec=specs[k]||'';
-      const cor=COR_COND[cond]||[160,160,160];
-
-      // Linha do item
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(8.5);
-      doc.setTextColor(60,60,60);
-      doc.text(LABEL_ITEM[k]||k,ML+2,y);
-
-      // Spec
-      if(spec){
-        doc.setTextColor(100,100,100);
-        doc.text(spec.substring(0,45),ML+55,y);
-      }
-
-      // Badge condição
-      doc.setFillColor(...cor);
-      doc.roundedRect(W-MR-32,y-3.5,32,5,1,1,'F');
-      doc.setTextColor(255,255,255);
-      doc.setFontSize(7);
-      doc.text(cond,W-MR-16,y-0.2,{align:'center'});
-      y+=5.5;
-    });
-    y+=2;
+  // Montar entradas de foto: preferir versão em memória (mais recente), fallback Firebase
+  const fotoEntries=[];
+  FOTO_ORDEM.forEach(f=>{
+    if(fotoMemoria[f.key]) fotoEntries.push({...f,src:'mem',file:fotoMemoria[f.key]});
+    else if(fotoFirebase[f.key]) fotoEntries.push({...f,src:'url',url:fotoFirebase[f.key]});
+  });
+  // Chaves extras no Firebase não mapeadas
+  Object.entries(fotoFirebase).forEach(([k,url])=>{
+    if(url&&!FOTO_ORDEM.find(f=>f.key===k))
+      fotoEntries.push({key:k,label:k.replace(/_/g,' '),src:'url',url});
   });
 
-  // Observações
-  const obs=bike.obsCheck||g('obs-check')||'';
-  const reparos=bike.obsReparo||g('obs-reparo')||'';
-  if(obs||reparos){
-    if(y>250){doc.addPage();y=MT;}
-    doc.setDrawColor(200,200,200);
-    doc.line(ML,y,W-MR,y);y+=6;
-    if(obs){
-      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(0,0,0);
-      doc.text('Observações gerais:',ML,y);y+=5;
-      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(80,80,80);
-      doc.splitTextToSize(obs,lw).forEach(l=>{doc.text(l,ML,y);y+=4.5;});
-      y+=2;
-    }
-    if(reparos){
-      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(200,50,50);
-      doc.text('Reparos necessários:',ML,y);y+=5;
-      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(80,80,80);
-      doc.splitTextToSize(reparos,lw).forEach(l=>{doc.text(l,ML,y);y+=4.5;});
+  const loadFotoParaPDF=async(entrada)=>{
+    try{
+      if(entrada.src==='mem'&&entrada.file){
+        // Foto em memória (File object) — converter direto para base64
+        return await new Promise(res=>{
+          const r=new FileReader();
+          r.onload=()=>res(r.result);
+          r.onerror=()=>res(null);
+          r.readAsDataURL(entrada.file);
+        });
+      }
+      if(entrada.src==='url'&&entrada.url){
+        // Foto no Firebase — usar proxy Netlify
+        try{
+          const resp=await fetch('/.netlify/functions/imgproxy?url='+encodeURIComponent(entrada.url));
+          if(resp.ok){const d=await resp.json();if(d.dataUrl)return d.dataUrl;}
+        }catch(e){}
+        // Fallback: fetch direto
+        try{
+          const resp=await fetch(entrada.url);
+          if(resp.ok){
+            const blob=await resp.blob();
+            return await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>res(null);r.readAsDataURL(blob);});
+          }
+        }catch(e){}
+      }
+    }catch(e){}
+    return null;
+  };
+
+  if(fotoEntries.length>0){
+    if(y>230){doc.addPage();y=MT;}
+    // Título seção fotos
+    doc.setFillColor(240,248,244);doc.rect(ML,y-3,lw,7,'F');
+    doc.setDrawColor(18,160,86);doc.setLineWidth(0.5);doc.line(ML,y-3,ML,y+4);
+    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(6,80,40);
+    doc.text('REGISTRO FOTOGRÁFICO',ML+3,y+2);
+    doc.setLineWidth(0.1);doc.setDrawColor(200,200,200);
+    y+=10;
+
+    const b64list=await Promise.all(fotoEntries.map(async f=>({...f,b64:await loadFotoParaPDF(f)})));
+    const valid=b64list.filter(f=>f.b64);
+
+    if(valid.length>0){
+      const cols=Math.min(valid.length,3);
+      const gap=3,fw=(lw-(cols-1)*gap)/cols,fh=fw*0.70;
+      let maxY=y;
+      valid.forEach((f,i)=>{
+        const col=i%cols,row=Math.floor(i/cols);
+        if(col===0&&i>0){if(y+row*(fh+10)>H-18){doc.addPage();y=MT;}}
+        const fx=ML+col*(fw+gap),fy=y+row*(fh+10);
+        try{
+          doc.setDrawColor(210,210,210);doc.setLineWidth(0.2);
+          doc.roundedRect(fx,fy,fw,fh,2,2,'S');
+          doc.addImage(f.b64,'JPEG',fx,fy,fw,fh,undefined,'FAST');
+        }catch(e){}
+        doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(130,130,130);
+        doc.text(f.label,fx+fw/2,fy+fh+4.5,{align:'center'});
+        maxY=Math.max(maxY,fy+fh+7);
+      });
+      y=maxY+6;
+    } else {
+      doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(160,160,160);
+      doc.text('Fotos não disponíveis (CORS — gere o PDF pelo painel online)',ML+3,y+4);
+      y+=10;
     }
   }
 
-  // Rodapé
+  // ── CHECKLIST (usando CHECK_SECTIONS real) ──
+  const COND_COR={'Ótimo':[0,160,80],'Bom':[80,170,80],'Regular':[210,140,0],'Precisa trocar':[200,50,50],'Não verificado':[160,160,160],'':[160,160,160]};
+
+  CHECK_SECTIONS.forEach(sec=>{
+    // Filtrar itens com algum dado preenchido
+    const itens=sec.items.filter(item=>{
+      const cond=bc[item.key]||'';
+      const spec=specs[item.key]||'';
+      return cond&&cond!=='Não verificado'||spec;
+    });
+    // Seções principais sempre aparecem mesmo sem dados
+    const obrig=['estrutura','transmissao','freios','cockpit','rodas'];
+    if(!itens.length&&!obrig.includes(sec.key))return;
+    const itensExib=itens.length?itens:sec.items;
+
+    if(y>255){doc.addPage();y=MT;}
+    // Cabeçalho seção
+    doc.setFillColor(240,248,244);doc.rect(ML,y-3,lw,7,'F');
+    doc.setDrawColor(18,160,86);doc.setLineWidth(0.5);doc.line(ML,y-3,ML,y+4);
+    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(6,80,40);
+    doc.text(sec.title.toUpperCase(),ML+3,y+2);
+    doc.setLineWidth(0.1);doc.setDrawColor(200,200,200);
+    y+=9;
+
+    itensExib.forEach((item,idx)=>{
+      if(y>272){doc.addPage();y=MT;}
+      const cond=bc[item.key]||'Não verificado';
+      const spec=specs[item.key]||'';
+      const cor=COND_COR[cond]||[160,160,160];
+
+      if(idx%2===0){doc.setFillColor(250,250,250);doc.rect(ML,y-1,lw,7,'F');}
+
+      // Dot
+      doc.setFillColor(...cor);doc.circle(ML+3,y+2,1.5,'F');
+
+      // Label
+      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(60,60,60);
+      doc.text(item.label,ML+7,y+4);
+
+      // Pill status
+      const pw=doc.getTextWidth(cond)+6;
+      doc.setFillColor(...cor.map(v=>Math.min(255,v+170)));
+      doc.roundedRect(ML+75,y,pw,6,1.5,1.5,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...cor);
+      doc.text(cond,ML+78,y+4.5);
+
+      // Spec
+      if(spec){
+        const specX=ML+75+pw+3;
+        doc.setFont('helvetica','italic');doc.setFontSize(7.5);doc.setTextColor(120,120,120);
+        doc.text(doc.splitTextToSize(spec,W-MR-specX)[0],specX,y+4.5);
+      }
+
+      doc.setDrawColor(238,238,238);doc.line(ML,y+6,W-MR,y+6);
+      y+=7;
+    });
+    y+=4;
+  });
+
+  // ── OBSERVAÇÕES ──
+  if(danos||obsReparo){
+    if(y>250){doc.addPage();y=MT;}
+    doc.setDrawColor(200,200,200);doc.line(ML,y,W-MR,y);y+=6;
+    if(danos){
+      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(170,40,40);
+      doc.text('Danos identificados:',ML,y);y+=5;
+      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(70,70,70);
+      doc.splitTextToSize(danos,lw).forEach(l=>{doc.text(l,ML+3,y);y+=4.5;});y+=2;
+    }
+    if(obsReparo){
+      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(160,100,0);
+      doc.text('Reparos necessários:',ML,y);y+=5;
+      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(70,70,70);
+      doc.splitTextToSize(obsReparo,lw).forEach(l=>{doc.text(l,ML+3,y);y+=4.5;});
+    }
+  }
+
+  // ── RODAPÉ ──
   const total=doc.getNumberOfPages();
   for(let i=1;i<=total;i++){
     doc.setPage(i);
     doc.setFont('helvetica','italic');doc.setFontSize(7.5);doc.setTextColor(160,160,160);
-    doc.text('Nuflow Bikes — Laudo Técnico gerado automaticamente',ML,292);
-    doc.text(`Página ${i}/${total}`,W-MR,292,{align:'right'});
+    doc.text('Nuflow Bikes — CNPJ 38.559.372/0001-25 — gestao@nuflow.com.br',W/2,292,{align:'center'});
+    doc.text('Página '+i+'/'+total,W-MR,292,{align:'right'});
   }
 
-  const nome=`laudo_${(bike.marca||'bike').toLowerCase()}_${(bike.modelo||'').toLowerCase().replace(/\s+/g,'_')}.pdf`;
+  const nome='laudo_'+(bike.marca||'bike').toLowerCase().replace(/\s+/g,'_')+'_'+(bike.modelo||'').toLowerCase().replace(/\s+/g,'_')+'.pdf';
   doc.save(nome);
 };
-
 window.fecharBikeCheck=function(){
   if(window._bcAutosave){clearInterval(window._bcAutosave);window._bcAutosave=null;}
   document.getElementById('bc-pending-section').style.display='block';
