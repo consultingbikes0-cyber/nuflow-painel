@@ -1226,12 +1226,76 @@ function gerarAcoesVendida(b){
   } else {
     btns.push(`<span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">+20d bloqueado</span>`);
   }
-  if(b.bikeCheck&&dentro7) btns.push(`<button class="btn btn-sm btn-teal" onclick="abrirBikeCheck('${id}')">✏️ Bike Check</button>`);
-  if(!b.bikeCheck&&dentro7) btns.push(`<button class="btn btn-sm btn-teal" onclick="abrirBikeCheck('${id}')">+ Bike Check</button>`);
+  // Contrato de venda — sempre disponível
+  btns.push(`<button class="btn btn-sm btn-teal" onclick="gerarContratoVenda('${id}')"
+    title="${b.contratoD4SignUUID?'Contrato enviado — reenviar atualizado':'Gerar e enviar contrato de venda'}">
+    ${b.contratoD4SignUUID?'🔄 Reenviar contrato':'📄 Contrato de venda'}
+  </button>`);
+  btns.push(`<span id="contrato-venda-msg-${id}" style="display:none;font-size:11px;font-family:'DM Mono',monospace;color:var(--green)"></span>`);
+  if(b.bikeCheck&&dentro7) btns.push(`<button class="btn btn-sm btn-blue" onclick="abrirBikeCheck('${id}')">✏️ Bike Check</button>`);
+  if(!b.bikeCheck&&dentro7) btns.push(`<button class="btn btn-sm btn-blue" onclick="abrirBikeCheck('${id}')">+ Bike Check</button>`);
   if(b.bikeCheck&&dv<30)    btns.push(`<button class="btn btn-sm btn-blue" onclick="baixarBikeCheckPDF('${id}')">📋 PDF <span style="font-size:10px;opacity:.7">(${diasRestBC}d)</span></button>`);
   if(b.nfURL&&!b.dadosLimpos) btns.push(`<button class="btn btn-sm btn-blue" onclick="window.open('${b.nfURL}','_blank')">📄 NF</button>`);
   return btns.join('');
 }
+
+// Gerar contrato de venda direto da aba Vendidas
+window.gerarContratoVenda=async function(id){
+  const bike=bikes.find(b=>b._docId===id);
+  if(!bike)return;
+  const msgEl=document.getElementById('contrato-venda-msg-'+id);
+  const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
+
+  if(!bike.compradorEmail){
+    alert('E-mail do comprador não cadastrado.\nEdite a venda e adicione o e-mail antes de gerar o contrato.');return;
+  }
+
+  const acao=bike.contratoD4SignUUID?
+    confirm(`Reenviar contrato de venda ATUALIZADO para ${bike.comprador} (${bike.compradorEmail})?`):
+    confirm(`Gerar e enviar contrato de venda para ${bike.comprador} (${bike.compradorEmail})?`);
+  if(!acao)return;
+
+  // Limpar UUID antigo para forçar novo contrato se reenvio
+  if(bike.contratoD4SignUUID){
+    await updateDoc(doc(db,'bikes',id),{contratoD4SignUUID:null,contratoStatus:'gerando_novo'});
+    bike.contratoD4SignUUID=null;
+  }
+
+  setMsg('⏳ Gerando PDF...');
+  const v=bike.vendedor||{};
+  const dados={
+    comprador:bike.comprador||'',compradorCPF:bike.compradorCPF||'',
+    compradorRG:bike.compradorRG||'',compradorEmail:bike.compradorEmail||'',
+    compradorTel:bike.compradorTel||'',compradorEnd:bike.compradorEnd||'',
+    compradorCidade:bike.compradorCidade||'',compradorEstado:bike.compradorEstado||'MG',
+    compradorCEP:bike.compradorCEP||'',
+    valorVenda:bike.valorVenda||bike.valor,valorSinal:bike.valorSinal||0,
+    formaPagamento:bike.formaPagamento||'PIX',
+    dataVenda:bike.dataVenda||new Date().toISOString().split('T')[0],
+    marca:bike.marca||'',modelo:bike.modelo||'',versao:bike.versao||'',
+    tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
+    cor:bike.cor||'',ano:bike.ano||'',
+    nfNumero:bike.nfNumero||'',temNF:bike.temNF||false,
+    vendedorNome:v.nome||'',vendedorCPF:v.cpf||''
+  };
+  try{
+    const pdfBlob=gerarPDFContrato('venda',dados);
+    const nomeArq=`contrato_venda_${dados.comprador.replace(/\s+/g,'_')}_${dados.dataVenda}.pdf`;
+    const sigVenda=[
+      {email:dados.compradorEmail,act:'1',foreign:'0',certificadoicpbr:'0',assinatura_presencial:'0',docauth:'0',docauthandselfie:'0',embed_methodauth:'email'},
+      {email:NUFLOW_EMAIL,act:'1',foreign:'0',certificadoicpbr:'0',assinatura_presencial:'0',docauth:'0',docauthandselfie:'0',embed_methodauth:'email'}
+    ];
+    const msgVenda=`Olá ${dados.comprador}! Segue o contrato de compra da sua bike ${dados.marca} ${dados.modelo}. Por favor, assine para concluir a negociação. Nuflow Bikes.`;
+    const uuidDoc=await d4signEnviarContrato(pdfBlob,nomeArq,sigVenda,msgVenda,setMsg);
+    await updateDoc(doc(db,'bikes',id),{contratoD4SignUUID:uuidDoc,contratoStatus:'aguardando_assinatura',contratoGeradoEm:new Date().toISOString()});
+    setMsg('✅ Contrato enviado! '+dados.compradorEmail+' receberá o link.','var(--green)');
+    setTimeout(()=>{if(msgEl)msgEl.style.display='none';},8000);
+    await loadData();
+  }catch(e){
+    console.error('[D4Sign Venda]',e);
+    setMsg('❌ '+e.message,'var(--red)');
+  }
+};
 
 // Variável global para guardar filtro de mês das vendidas
 let _filtroMesVendidas='';
