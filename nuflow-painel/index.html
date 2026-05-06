@@ -3372,8 +3372,6 @@ window.salvarFinanceiro=async function(){
 };
 
 window.excluirFinanceiro=async function(id){
-  const item=finLancamentos.find(f=>f._docId===id);
-  if(item&&item.tipo==='receita_venda'){alert('Lançamentos de venda são automáticos e não podem ser excluídos.');return;}
   if(!confirm('Excluir este lançamento?'))return;
   try{await deleteDoc(doc(db,'financeiro',id));await loadFinanceiro();renderFinanceiro();}
   catch(e){console.error(e);}
@@ -3506,7 +3504,9 @@ function renderFinanceiro(){
               <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:14px;color:${isPos?'var(--green)':'var(--red)'}">
                 ${isPos?'+':'−'}${fmtRInt(Math.abs(f.valor))}
               </span>
-
+              <button onclick="excluirFinanceiro('${f._docId}')" title="Excluir lançamento"
+                style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;padding:2px 4px;border-radius:4px;transition:color .15s"
+                onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">🗑</button>
             </div>
           </div>`;
         }).join('')}
