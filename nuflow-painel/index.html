@@ -542,8 +542,19 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <div class="form-block">
     <div class="form-block-title"><div class="fdot fdot-purple"></div>Dados do vendedor / consignante</div>
     <div class="grid2" style="gap:14px">
-      <div class="fg"><label>Nome completo *</label><input id="v-nome" type="text" placeholder="João da Silva"></div>
-      <div class="fg"><label>CPF *</label><input id="v-cpf" type="text" placeholder="000.000.000-00" oninput="maskCPF(this)"></div>
+      <div class="fg" style="position:relative"><label>Nome completo *</label>
+        <input id="v-nome" type="text" placeholder="João da Silva" oninput="buscarClientePorNome(this.value)" autocomplete="off">
+        <div id="v-nome-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-sm);z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px #0006"></div>
+      </div>
+      <div class="fg" style="position:relative"><label>CPF *</label>
+        <input id="v-cpf" type="text" placeholder="000.000.000-00" oninput="maskCPF(this);buscarClientePorCPF(this.value)" autocomplete="off">
+        <div id="v-cpf-suggestion" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--green);border-radius:var(--radius-sm);z-index:100;font-size:13px;padding:.75rem 1rem;cursor:pointer;box-shadow:0 4px 16px #0006"
+          onclick="preencherClienteCadastro()">
+          <div style="font-size:10px;color:var(--green);font-family:'DM Mono',monospace;text-transform:uppercase;margin-bottom:4px">✓ Cliente encontrado — clique para preencher</div>
+          <div id="v-cpf-suggestion-nome" style="font-weight:600;color:var(--text)"></div>
+          <div id="v-cpf-suggestion-info" style="font-size:12px;color:var(--text3);margin-top:2px"></div>
+        </div>
+      </div>
       <div class="fg"><label>E-mail</label><input id="v-email" type="email" placeholder="joao@email.com"></div>
       <div class="fg"><label>Telefone / WhatsApp</label><input id="v-tel" type="text" placeholder="(31) 9 9999-9999"></div>
       <div class="fg"><label>CEP</label><input id="v-cep" type="text" placeholder="00000-000" oninput="maskCEP(this)" onblur="buscaCEP()"></div>
@@ -3077,6 +3088,68 @@ window.toggleProprioBlock=function(){
   if(bl)bl.classList.toggle('show',aq==='proprio');
   window.calcComissao();
 };
+// ===== AUTOCOMPLETE CLIENTES NO CADASTRO =====
+let _clienteSugerido = null;
+
+window.buscarClientePorCPF=function(cpfRaw){
+  const cpf=cpfRaw.replace(/\D/g,'');
+  const sug=document.getElementById('v-cpf-suggestion');
+  if(cpf.length<11){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
+  const found=_clientesData.find(c=>(c.cpf||'').replace(/\D/g,'')=== cpf);
+  if(!found){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
+  _clienteSugerido=found;
+  if(sug){
+    sug.style.display='block';
+    const nome=document.getElementById('v-cpf-suggestion-nome');
+    const info=document.getElementById('v-cpf-suggestion-info');
+    if(nome) nome.textContent=found.nome||'—';
+    if(info) info.textContent=[found.email,found.tel,found.cidade].filter(Boolean).join(' · ');
+  }
+};
+
+window.buscarClientePorNome=function(nome){
+  const sug=document.getElementById('v-nome-suggestions');
+  if(!sug)return;
+  if(!nome||nome.length<2){sug.style.display='none';return;}
+  const results=_clientesData.filter(c=>(c.nome||'').toLowerCase().includes(nome.toLowerCase())).slice(0,5);
+  if(!results.length){sug.style.display='none';return;}
+  sug.style.display='block';
+  sug.innerHTML=results.map(c=>`
+    <div onclick="preencherClienteCadastroById('${c._id}')"
+      style="padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border)"
+      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <div style="font-weight:500;color:var(--text)">${c.nome}</div>
+      <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${[c.cpf,c.tel,c.cidade].filter(Boolean).join(' · ')}</div>
+    </div>`).join('');
+};
+
+window.preencherClienteCadastro=function(){
+  if(!_clienteSugerido)return;
+  preencherClienteCadastroById(_clienteSugerido._id);
+};
+
+window.preencherClienteCadastroById=function(id){
+  const c=_clientesData.find(x=>x._id===id);
+  if(!c)return;
+  const s=(fid,val)=>{const el=document.getElementById(fid);if(el&&val)el.value=val;};
+  s('v-nome',c.nome);s('v-cpf',c.cpf);s('v-email',c.email);s('v-tel',c.tel);
+  s('v-cidade',c.cidade);s('v-estado',c.estado);
+  // Fechar sugestões
+  const sg1=document.getElementById('v-cpf-suggestion');if(sg1)sg1.style.display='none';
+  const sg2=document.getElementById('v-nome-suggestions');if(sg2)sg2.style.display='none';
+  _clienteSugerido=null;
+};
+
+// Fechar sugestões ao clicar fora
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#v-cpf')&&!e.target.closest('#v-cpf-suggestion')){
+    const sg=document.getElementById('v-cpf-suggestion');if(sg)sg.style.display='none';
+  }
+  if(!e.target.closest('#v-nome')&&!e.target.closest('#v-nome-suggestions')){
+    const sg=document.getElementById('v-nome-suggestions');if(sg)sg.style.display='none';
+  }
+});
+
 window.maskCPF=function(el){el.value=el.value.replace(/\D/g,'').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').substring(0,14);};
 window.maskCEP=function(el){el.value=el.value.replace(/\D/g,'').replace(/(\d{5})(\d{3})/,'$1-$2').substring(0,9);};
 window.buscaCEP=async function(el,prefix){
@@ -4025,6 +4098,68 @@ function buildChart(id,type,labels,data,opts={}){
 }
 
 // ===== MASKS / CEP =====
+// ===== AUTOCOMPLETE CLIENTES NO CADASTRO =====
+// _clienteSugerido já declarado acima
+
+window.buscarClientePorCPF=function(cpfRaw){
+  const cpf=cpfRaw.replace(/\D/g,'');
+  const sug=document.getElementById('v-cpf-suggestion');
+  if(cpf.length<11){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
+  const found=_clientesData.find(c=>(c.cpf||'').replace(/\D/g,'')=== cpf);
+  if(!found){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
+  _clienteSugerido=found;
+  if(sug){
+    sug.style.display='block';
+    const nome=document.getElementById('v-cpf-suggestion-nome');
+    const info=document.getElementById('v-cpf-suggestion-info');
+    if(nome) nome.textContent=found.nome||'—';
+    if(info) info.textContent=[found.email,found.tel,found.cidade].filter(Boolean).join(' · ');
+  }
+};
+
+window.buscarClientePorNome=function(nome){
+  const sug=document.getElementById('v-nome-suggestions');
+  if(!sug)return;
+  if(!nome||nome.length<2){sug.style.display='none';return;}
+  const results=_clientesData.filter(c=>(c.nome||'').toLowerCase().includes(nome.toLowerCase())).slice(0,5);
+  if(!results.length){sug.style.display='none';return;}
+  sug.style.display='block';
+  sug.innerHTML=results.map(c=>`
+    <div onclick="preencherClienteCadastroById('${c._id}')"
+      style="padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border)"
+      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <div style="font-weight:500;color:var(--text)">${c.nome}</div>
+      <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${[c.cpf,c.tel,c.cidade].filter(Boolean).join(' · ')}</div>
+    </div>`).join('');
+};
+
+window.preencherClienteCadastro=function(){
+  if(!_clienteSugerido)return;
+  preencherClienteCadastroById(_clienteSugerido._id);
+};
+
+window.preencherClienteCadastroById=function(id){
+  const c=_clientesData.find(x=>x._id===id);
+  if(!c)return;
+  const s=(fid,val)=>{const el=document.getElementById(fid);if(el&&val)el.value=val;};
+  s('v-nome',c.nome);s('v-cpf',c.cpf);s('v-email',c.email);s('v-tel',c.tel);
+  s('v-cidade',c.cidade);s('v-estado',c.estado);
+  // Fechar sugestões
+  const sg1=document.getElementById('v-cpf-suggestion');if(sg1)sg1.style.display='none';
+  const sg2=document.getElementById('v-nome-suggestions');if(sg2)sg2.style.display='none';
+  _clienteSugerido=null;
+};
+
+// Fechar sugestões ao clicar fora
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#v-cpf')&&!e.target.closest('#v-cpf-suggestion')){
+    const sg=document.getElementById('v-cpf-suggestion');if(sg)sg.style.display='none';
+  }
+  if(!e.target.closest('#v-nome')&&!e.target.closest('#v-nome-suggestions')){
+    const sg=document.getElementById('v-nome-suggestions');if(sg)sg.style.display='none';
+  }
+});
+
 window.maskCPF=function(el){let v=el.value.replace(/\D/g,'').substring(0,11);v=v.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');el.value=v;};
 window.maskCEP=function(el){let v=el.value.replace(/\D/g,'').substring(0,8);v=v.replace(/(\d{5})(\d)/,'$1-$2');el.value=v;};
 window.buscaCEP=async function(){
@@ -4498,6 +4633,8 @@ function drawClientes() {
   h += '<div id="cpf-lookup-result" style="margin-top:10px;font-size:13px;color:var(--text3)"></div>';
   h += '</div>';
   
+  // Container da lista (permite atualizar sem re-renderizar o header)
+  h += '<div id="clientes-lista">';
   if (filtered.length === 0) {
     h += '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">' + (busca ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado ainda.<br>Os clientes são salvos automaticamente ao registrar vendas.') + '</div></div>';
   } else {
@@ -4524,6 +4661,7 @@ function drawClientes() {
     });
   }
   
+  h += '</div>'; // /clientes-lista
   root.innerHTML = h;
 }
 
@@ -4583,7 +4721,47 @@ function drawClienteDetalhe(c) {
 
 window.renderClientes = function() { loadClientes(); };
 window.clienteDetalhe = function(id) { _clienteDetalhe = id; drawClientes(); };
-window.clienteSearch = function(v) { _clienteBusca = v; drawClientes(); };
+window.clienteSearch = function(v) {
+  _clienteBusca = v;
+  // Não re-renderizar o header (evita perda de foco no input)
+  // Só atualizar a lista de resultados
+  _drawClientesLista();
+};
+
+function _drawClientesLista(){
+  const lista = document.getElementById('clientes-lista');
+  if(!lista){ drawClientes(); return; }
+  const busca = _clienteBusca.toLowerCase();
+  const filtered = busca
+    ? _clientesData.filter(c => (c.nome||'').toLowerCase().includes(busca)||(c.cpf||'').includes(busca)||(c.email||'').toLowerCase().includes(busca)||(c.tel||'').includes(busca))
+    : _clientesData;
+  if(!filtered.length){
+    lista.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">' + (busca?'Nenhum cliente encontrado':'Nenhum cliente cadastrado ainda.') + '</div></div>';
+    return;
+  }
+  lista.innerHTML = filtered.map(function(c){
+    const hist = c.historico||[];
+    const compras = hist.filter(h=>h.tipo==='comprador').length;
+    const vendas = hist.filter(h=>h.tipo==='vendedor').length;
+    const ultima = hist.length?hist[hist.length-1]:null;
+    let h='';
+    h+='<div class="bike-card" style="cursor:pointer" data-cid="'+c._id+'" onclick="clienteDetalhe(this.getAttribute(\'data-cid\'))">';
+    h+='<div class="bike-top"><div>';
+    h+='<div class="bike-name">'+(c.nome||'Sem nome')+'</div>';
+    h+='<div class="bike-sub-info">'+(c.cpf||'sem CPF')+(c.cidade?' · '+c.cidade+'/'+(c.estado||''):'')+'</div>';
+    h+='</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">';
+    if(compras) h+='<span class="badge badge-sold">'+compras+' compra'+(compras>1?'s':'')+'</span>';
+    if(vendas)  h+='<span class="badge badge-ok">'+vendas+' venda'+(vendas>1?'s':'')+'</span>';
+    h+='</div></div>';
+    h+='<div style="font-size:13px;color:var(--text2);margin-top:4px;display:flex;gap:16px;flex-wrap:wrap">';
+    if(c.email) h+='<span>✉️ '+c.email+'</span>';
+    if(c.tel)   h+='<span>📱 '+c.tel+'</span>';
+    h+='</div>';
+    if(ultima) h+='<div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:DM Mono,monospace">Última: '+ultima.bike+' — '+(ultima.data?new Date(ultima.data+'T12:00:00').toLocaleDateString('pt-BR'):'—')+'</div>';
+    h+='</div>';
+    return h;
+  }).join('');
+}
 
 window.formatCPFInput = function(el) {
   let v = el.value.replace(/\D/g,'').slice(0,11);
