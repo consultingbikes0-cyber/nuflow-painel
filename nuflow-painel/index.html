@@ -2284,18 +2284,31 @@ window.salvarEdicaoVenda=async function(id){
 };
 
 window.estornarVenda=async function(id){
-  if(!confirm('Estornar esta venda?\nA bike voltará para o estoque.'))return;
+  if(!confirm('Estornar esta venda?\nA bike voltará para o estoque e os lançamentos financeiros serão removidos.'))return;
   setSyncStatus('saving');
   try{
+    // 1. Reverter bike para estoque
     await updateDoc(doc(db,'bikes',id),{
       vendida:false,
       dataVenda:null,valorVenda:null,comissaoRecebida:null,
       canalVenda:null,comprador:null,compradorCPF:null,
       compradorEmail:null,diasParaVender:null
     });
+
+    // 2. Remover lançamentos financeiros automáticos desta venda
+    const lancamentosVenda=finLancamentos.filter(f=>f.bikeId===id&&f.tipo==='receita_venda');
+    if(lancamentosVenda.length>0){
+      const {deleteDoc:_del,doc:_doc}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      for(const f of lancamentosVenda){
+        await _del(_doc(db,'financeiro',f._docId));
+        console.log('Lançamento removido:',f.desc,f._docId);
+      }
+      console.log(`${lancamentosVenda.length} lançamento(s) financeiro(s) removido(s)`);
+    }
+
     await loadData();
     switchTab('estoque');
-  }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao estornar.');}
+  }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao estornar.\n'+e.message);}
 };
 
 // ===== ZAPSIGN =====
@@ -3139,6 +3152,15 @@ function renderDRE(){
   }).join('');
 }
 window.renderDRE=renderDRE;
+
+window.toggleMes=function(key){
+  const det=document.getElementById('detalhe-'+key);
+  const arr=document.getElementById('arr-'+key);
+  if(!det)return;
+  const aberto=det.style.display!=='none';
+  det.style.display=aberto?'none':'block';
+  if(arr)arr.textContent=aberto?'▸':'▾';
+};
 window.renderHistorico=function(){
   const ano=document.getElementById('hist-ano')?.value||'2026';
   const el=document.getElementById('hist-content');
