@@ -1129,21 +1129,25 @@ window.baixarBikeCheckPDF=async function(id){
     const valid=b64list.filter(f=>f.b64);
 
     if(valid.length>0){
-      const cols=valid.length===1?1:valid.length===2?2:3;
-      const gap=3,fw=(PW-(cols-1)*gap)/cols,fh=fw*0.70;
-      let maxY=y;
+      const cols=3,gap=3;
+      const fw=(PW-(cols-1)*gap)/cols; // ~54mm
+      const fh=Math.round(fw*0.72);    // ~39mm
+      const rowH=fh+9;
+      let col=0,rowStartY=y;
       valid.forEach((f,i)=>{
-        const col=i%cols,row=Math.floor(i/cols);
-        const fx=ML+col*(fw+gap),fy=y+row*(fh+10);
-        if(fy+fh+10>H-18&&col===0&&row>0){newPage();}
+        if(col===0&&i>0){
+          rowStartY+=rowH;
+          if(rowStartY+fh>H-18){newPage();rowStartY=y;}
+        }
+        const fx=ML+col*(fw+gap),fy=rowStartY;
         try{
           stroke(...CZ3);doc.setLineWidth(0.2);doc.roundedRect(fx,fy,fw,fh,2,2,'S');
           doc.addImage(f.b64,'JPEG',fx,fy,fw,fh,undefined,'FAST');
         }catch(e){}
-        font('normal',7);rgb(...CZ2);doc.text(f.label,fx+fw/2,fy+fh+5,{align:'center'});
-        maxY=Math.max(maxY,fy+fh+8);
+        font('normal',7);rgb(...CZ2);doc.text(f.label,fx+fw/2,fy+fh+4,{align:'center'});
+        col=(col+1)%cols;
       });
-      y=maxY+6;
+      y=rowStartY+rowH+3;
     } else {
       font('italic',8);rgb(...CZ2);doc.text('Fotos não disponíveis neste dispositivo.',ML+4,y+5);y+=10;
     }
@@ -1907,7 +1911,7 @@ window.exportarBikeCheckPDF=async function(id){
   doc.setTextColor(20,20,20);doc.setFont('helvetica','bold');doc.setFontSize(14);
   doc.text(((bike.marca||'')+' '+(bike.modelo||'')+' '+(bike.versao||'')).trim(),ML,y);y+=6;
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(80,80,80);
-  const infos=[bike.tipo&&'Tipo: '+bike.tipo,bike.tamanho&&'Tam: '+bike.tamanho,bike.ano&&'Ano: '+bike.ano,bike.serie&&'Série: '+bike.serie].filter(Boolean).join('   ·   ');
+  const infos=[bike.tipo&&'Tipo: '+bike.tipo,bike.tamanho&&'Tam: '+bike.tamanho,bike.ano?'Ano: '+bike.ano:null,bike.serie?'Série: '+bike.serie:null].filter(Boolean).join('   ·   ');
   if(infos){doc.text(infos,ML,y);y+=5;}
   doc.setDrawColor(200,200,200);doc.line(ML,y,W-MR,y);y+=5;
 
@@ -1997,23 +2001,39 @@ window.exportarBikeCheckPDF=async function(id){
     const valid=b64list.filter(f=>f.b64);
 
     if(valid.length>0){
-      const cols=Math.min(valid.length,3);
-      const gap=3,fw=(lw-(cols-1)*gap)/cols,fh=fw*0.70;
-      let maxY=y;
+      // Layout fixo: 3 colunas, altura proporcional
+      // Calcular altura para caber 3 fotos por linha sem desperdiçar espaço
+      const cols=3;
+      const gap=3;
+      const fw=(lw-(cols-1)*gap)/cols; // ~54mm cada
+      const fh=Math.round(fw*0.72);    // ~39mm altura — proporção boa
+      const rowH=fh+9; // foto + label
+
+      // Distribuir fotos linha por linha, quebrando página quando necessário
+      let col=0;
+      let rowStartY=y;
       valid.forEach((f,i)=>{
-        const col=i%cols,row=Math.floor(i/cols);
-        if(col===0&&i>0){if(y+row*(fh+10)>H-18){doc.addPage();y=MT;}}
-        const fx=ML+col*(fw+gap),fy=y+row*(fh+10);
+        // Nova linha — verificar se cabe na página
+        if(col===0&&i>0){
+          rowStartY+=rowH;
+          // Quebrar página se não cabe
+          if(rowStartY+fh>H-18){
+            doc.addPage();y=MT;rowStartY=y;
+          }
+        }
+        const fx=ML+col*(fw+gap);
+        const fy=rowStartY;
         try{
           doc.setDrawColor(210,210,210);doc.setLineWidth(0.2);
           doc.roundedRect(fx,fy,fw,fh,2,2,'S');
           doc.addImage(f.b64,'JPEG',fx,fy,fw,fh,undefined,'FAST');
         }catch(e){}
         doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(130,130,130);
-        doc.text(f.label,fx+fw/2,fy+fh+4.5,{align:'center'});
-        maxY=Math.max(maxY,fy+fh+7);
+        doc.text(f.label,fx+fw/2,fy+fh+4,{align:'center'});
+        col=(col+1)%cols;
       });
-      y=maxY+6;
+      // Avançar y para após a última linha de fotos
+      y=rowStartY+rowH+3;
     } else {
       doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(160,160,160);
       doc.text('Fotos não disponíveis (CORS — gere o PDF pelo painel online)',ML+3,y+4);
