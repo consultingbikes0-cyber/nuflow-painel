@@ -4740,7 +4740,74 @@ async function loadClientes() {
     console.warn('Erro ao carregar clientes:', e);
     _clientesData = [];
   }
+
+  // Se não há clientes, montar da memória de bikes
+  // Isso garante que mesmo sem coleção separada, a aba mostra dados úteis
+  if(_clientesData.length === 0 && bikes.length > 0){
+    _clientesData = gerarClientesDesBikes();
+  }
+
   drawClientes();
+}
+
+function gerarClientesDesBikes(){
+  // Constrói lista de clientes a partir das bikes já carregadas em memória
+  const mapa = {}; // chave: cpf ou email
+
+  bikes.forEach(b => {
+    // Compradores (bikes vendidas)
+    if(b.vendida && b.comprador){
+      const chave = (b.compradorCPF||b.compradorEmail||b.comprador).trim();
+      if(!chave) return;
+      if(!mapa[chave]) mapa[chave] = {
+        _id: 'mem_'+chave.replace(/\W/g,''),
+        nome: b.comprador||'',
+        cpf: b.compradorCPF||'',
+        email: b.compradorEmail||'',
+        tel: b.compradorTel||'',
+        cidade: b.compradorCidade||'',
+        estado: b.compradorEstado||'',
+        historico: [],
+        criadoEm: b.dataVenda||'',
+        atualizadoEm: b.dataVenda||''
+      };
+      mapa[chave].historico.push({
+        tipo:'comprador',
+        data: b.dataVenda||'',
+        bike: `${b.marca||''} ${b.modelo||''}`.trim(),
+        valor: b.valorVenda||0,
+        bikeId: b._docId
+      });
+    }
+
+    // Vendedores (bikes consignadas)
+    const v = b.vendedor||{};
+    if(v.nome){
+      const chave = (v.cpf||v.email||v.nome).trim();
+      if(!chave) return;
+      if(!mapa[chave]) mapa[chave] = {
+        _id: 'mem_v_'+chave.replace(/\W/g,''),
+        nome: v.nome||'',
+        cpf: v.cpf||'',
+        email: v.email||'',
+        tel: v.tel||'',
+        cidade: v.cidade||'',
+        estado: v.estado||'',
+        historico: [],
+        criadoEm: b.dataEntrada||'',
+        atualizadoEm: b.dataEntrada||''
+      };
+      mapa[chave].historico.push({
+        tipo:'vendedor',
+        data: b.dataEntrada||'',
+        bike: `${b.marca||''} ${b.modelo||''}`.trim(),
+        valor: b.valor||0,
+        bikeId: b._docId
+      });
+    }
+  });
+
+  return Object.values(mapa).sort((a,b) => (b.atualizadoEm||'').localeCompare(a.atualizadoEm||''));
 }
 
 function drawClientes() {
