@@ -3211,23 +3211,42 @@ window.cadastrarBike=async function(){
   const aquisicao=g('n-aquisicao')||'consignado';
   const valor=g('n-valor'),dataEntrada=g('n-data')||new Date().toISOString().split('T')[0];
   const custo=g('n-custo'),precoEst=g('n-preco-est');
-  // Sem campos obrigatórios — cadastrar com o que foi preenchido
-  const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:g('v-estado').toUpperCase()};
+  // Sem campos obrigatórios
+  const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
   const serie=g('n-serie');
   const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:parseBRL(valor)||0,dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
   if(aquisicao==='proprio'){data.custo=Number(custo)||0;data.precoEst=Number(precoEst)||0;}
   setSyncStatus('saving');
   try{
-    await addDoc(bikesCol,data);
-    ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie','v-nome','v-cpf','v-email','v-tel','v-cep','v-rua','v-numero','v-comp','v-bairro','v-cidade','v-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    document.getElementById('n-tipo').value='';document.getElementById('n-aquisicao').value='consignado';
+    const docRef=await addDoc(bikesCol,data);
+    // Salvar vendedor no banco de clientes
+    if(vendedor.cpf||vendedor.email){
+      salvarCliente('vendedor',{
+        cpf:vendedor.cpf,nome:vendedor.nome,email:vendedor.email,
+        tel:vendedor.tel,cidade:vendedor.cidade,estado:vendedor.estado,
+        valor:parseBRL(valor)||0,dataEntrada,marca,modelo,bikeId:docRef.id
+      });
+    }
+    // Limpar formulário
+    ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie',
+     'v-nome','v-cpf','v-email','v-tel','v-cep','v-rua','v-numero','v-comp','v-bairro','v-cidade','v-estado'
+    ].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    document.getElementById('n-tipo').value='';
+    document.getElementById('n-aquisicao').value='consignado';
     document.getElementById('n-data').value=new Date().toISOString().split('T')[0];
     document.getElementById('proprio-block')?.classList.remove('show');
-    document.getElementById('com-preview').textContent='Preencha o valor';document.getElementById('com-preview').style.color='var(--text3)';
+    document.getElementById('com-preview').textContent='Preencha o valor';
+    document.getElementById('com-preview').style.color='var(--text3)';
     const msg=document.getElementById('form-msg');
-    if(msg){msg.style.display='inline';setTimeout(()=>msg.style.display='none',2000);}
-    await loadData();switchTab('bikecheck');
-  }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao salvar.\n'+e.message);}
+    if(msg){msg.style.display='inline';setTimeout(()=>{msg.style.display='none';},2000);}
+    setSyncStatus('ok');
+    await loadData();
+    switchTab('bikecheck');
+  }catch(e){
+    console.error('Erro cadastrarBike:',e);
+    setSyncStatus('error');
+    alert('Erro ao salvar: '+e.message);
+  }
 };
 
 
@@ -5047,7 +5066,14 @@ function drawCapLista(root) {
       h += '<div style="display:flex;gap:12px;align-items:center">';
       h += '<div style="text-align:right"><div style="font-size:10px;color:var(--text3)">comissão</div><div style="font-size:12px;color:var(--teal);font-weight:600">'+com+'</div></div>';
       h += '<div style="font-size:15px;font-weight:600;color:var(--green)">'+preco+'</div>';
-      h += '</div></div></div>';
+      h += '</div></div>';
+      if (b.status==='vendido') {
+        h += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">';
+        h += '<button class="btn btn-sm btn-teal" onclick="event.stopPropagation();capMigrarEstoque(\x27'+b.id+'\x27)">📦 Migrar para Estoque</button>';
+        h += '<span style="font-size:11px;color:var(--text3);font-family:DM Mono,monospace">Cria registro no Estoque + Vendidas</span>';
+        h += '</div>';
+      }
+      h += '</div>';
     });
   }
 
@@ -5121,6 +5147,7 @@ function drawCapDetalhe(b) {
   if (b.status==='novo'||b.status==='em_analise') h += '<button class="btn btn-sm" style="color:var(--green);border-color:var(--green-dim)" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27aprovado\x27)">✅ Aprovar</button>';
   if (b.status==='novo'||b.status==='em_analise'||b.status==='aprovado') h += '<button class="btn btn-sm btn-danger" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27reprovado\x27)">❌ Reprovar</button>';
   if (b.status==='aprovado') h += '<button class="btn btn-sm" style="color:var(--purple);border-color:var(--purple-dim)" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27vendido\x27)">💰 Vendida</button>';
+  if (b.status==='vendido') h += '<button class="btn btn-sm btn-teal" onclick="capMigrarEstoque(\x27'+bid+'\x27)">📦 Migrar para Estoque</button>';
   if (wppNum) {
     var msgOk = encodeURIComponent('Olá '+nome1+'! Sou da Nuflow Bikes. Analisamos sua '+(b.marca||'')+' '+(b.modelo||'')+' e temos interesse! Podemos conversar?');
     var msgNao = encodeURIComponent('Olá '+nome1+'! Sou da Nuflow Bikes. Analisamos sua '+(b.marca||'')+' '+(b.modelo||'')+' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
@@ -5355,12 +5382,13 @@ window.capMigrarEstoque = async function(id) {
   const confirma = confirm(
     'Migrar para o Estoque:\n' +
     (b.marca||'') + ' ' + (b.modelo||'') + ' ' + (b.ano||'') + '\n\n' +
-    'A bike será criada no Estoque para você completar as informações e registrar a venda.'
+    'A bike será criada no Estoque para você completar o valor de venda e registrar a transação.'
   );
   if (!confirma) return;
 
   try {
     const { addDoc: _add, collection: _col } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const hoje = new Date().toISOString().split('T')[0];
     const novaBike = {
       marca: (b.marca||'').trim(),
       modelo: (b.modelo||'').trim(),
@@ -5373,7 +5401,7 @@ window.capMigrarEstoque = async function(id) {
       precoEst: Number(b.preco_pedido||0),
       serie: '',
       aquisicao: 'consignado',
-      dataEntrada: new Date().toISOString().split('T')[0],
+      dataEntrada: hoje,
       vendedor: {
         nome: (b.nome||'').trim(),
         tel: (b.whatsapp||'').trim(),
@@ -5382,13 +5410,14 @@ window.capMigrarEstoque = async function(id) {
         estado: (b.estado||'').trim()
       },
       captacaoId: String(id),
+      captacaoObs: [b.suspensao,b.freios,b.relacao,b.rodas,b.outros_componentes].filter(Boolean).join(' / '),
       vendida: false,
       criadoEm: new Date().toISOString()
     };
 
-    await _add(_col(db, 'bikes'), novaBike);
+    const ref = await _add(_col(db, 'bikes'), novaBike);
     await loadData();
-    alert('✅ Bike migrada para o Estoque!\nComplete as informações e registre a venda quando estiver pronto.');
+    alert('✅ Bike migrada para o Estoque!\n\nAgora vá ao Estoque, clique em "Registrar venda" para preencher os dados do comprador e confirmar a transação. Ela aparecerá automaticamente na aba Vendidas.');
     switchTab('estoque');
   } catch(e) {
     console.error('Erro ao migrar:', e);
