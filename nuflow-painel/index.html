@@ -4852,6 +4852,59 @@ window.buscarPorCPF = function() {
     res.innerHTML = '<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:12px;font-size:13px;color:var(--amber)">CPF ' + cpfFmt + ' não cadastrado ainda.</div>';
   }
 };
+// ===== MIGRAR BIKE DA CAPTAÇÃO PARA O ESTOQUE =====
+window.capMigrarEstoque=async function(id){
+  // capData é global (definida no script externo)
+  const b=(window.capData||[]).find(x=>x.id===id);
+  if(!b){alert('Bike não encontrada.');return;}
+
+  const jaExiste=bikes.find(bk=>bk.captacaoId===String(id));
+  if(jaExiste){
+    alert('Esta bike já está no Estoque!');
+    switchTab('estoque');
+    return;
+  }
+
+  if(!confirm('Migrar para o Estoque:\n'+(b.marca||'')+' '+(b.modelo||'')+' '+(b.ano||'')+'\n\nA bike será criada no Estoque para você completar as informações e registrar a venda.'))return;
+
+  try{
+    const hoje=new Date().toISOString().split('T')[0];
+    const novaBike={
+      marca:(b.marca||'').trim(),
+      modelo:(b.modelo||'').trim(),
+      versao:(b.versao||'').trim(),
+      tipo:(b.tipo||'').trim(),
+      tamanho:(b.tamanho||'').trim(),
+      ano:b.ano?String(b.ano):'',
+      cor:'',
+      valor:Number(b.preco_pedido||0),
+      precoEst:Number(b.preco_pedido||0),
+      serie:'',
+      aquisicao:'consignado',
+      dataEntrada:hoje,
+      vendedor:{
+        nome:(b.nome||'').trim(),
+        tel:(b.whatsapp||'').trim(),
+        email:'',cpf:'',
+        cidade:(b.cidade||'').trim(),
+        estado:(b.estado||'').trim()
+      },
+      captacaoId:String(id),
+      captacaoObs:[b.suspensao,b.freios,b.relacao,b.rodas,b.outros_componentes].filter(Boolean).join(' / '),
+      vendida:false,
+      criadoEm:new Date().toISOString()
+    };
+    await addDoc(bikesCol,novaBike);
+    await loadData();
+    alert('✅ Bike migrada para o Estoque!\nVá ao Estoque, clique em Registrar venda, preencha os dados do comprador e confirme. Ela aparecerá automaticamente em Vendidas.');
+    switchTab('estoque');
+  }catch(e){
+    console.error('Erro ao migrar:',e);
+    alert('Erro ao migrar bike: '+e.message);
+  }
+};
+
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded',()=>{
   const dataEl=document.getElementById('n-data');
@@ -4900,6 +4953,7 @@ async function loadCapData() {
   if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-family:DM Mono,monospace">carregando...</div>';
   var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
   capData = Array.isArray(data) ? data : [];
+  window.capData = capData;
   capLoaded = true;
   var novos = capData.filter(function(b){return b.status==='novo';}).length;
   var el = document.getElementById('count-captacao');
@@ -4956,6 +5010,7 @@ async function capUpdateStatus(id, status) {
 
   var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
   capData = Array.isArray(data) ? data : [];
+  window.capData = capData;
   var novos = capData.filter(function(b){return b.status==='novo';}).length;
   var el = document.getElementById('count-captacao');
   if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
@@ -5382,63 +5437,7 @@ window.renderCaptacao = function() {
 window.loadCapData = loadCapData;
 window.capUpdateStatus = capUpdateStatus;
 
-window.capMigrarEstoque = async function(id) {
-  const b = capData.find(function(x){ return x.id === id; });
-  if (!b) { alert('Bike não encontrada.'); return; }
-
-  // Verificar se já foi migrada
-  const jaExiste = bikes.find(function(bk){ return bk.captacaoId === String(id); });
-  if (jaExiste) {
-    alert('Esta bike já está no Estoque!\nVá para a aba Estoque para completar as informações.');
-    switchTab('estoque');
-    return;
-  }
-
-  const confirma = confirm(
-    'Migrar para o Estoque:\n' +
-    (b.marca||'') + ' ' + (b.modelo||'') + ' ' + (b.ano||'') + '\n\n' +
-    'A bike será criada no Estoque para você completar o valor de venda e registrar a transação.'
-  );
-  if (!confirma) return;
-
-  try {
-    const { addDoc: _add, collection: _col } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    const hoje = new Date().toISOString().split('T')[0];
-    const novaBike = {
-      marca: (b.marca||'').trim(),
-      modelo: (b.modelo||'').trim(),
-      versao: (b.versao||'').trim(),
-      tipo: (b.tipo||'').trim(),
-      tamanho: (b.tamanho||'').trim(),
-      ano: b.ano ? String(b.ano) : '',
-      cor: '',
-      valor: Number(b.preco_pedido||0),
-      precoEst: Number(b.preco_pedido||0),
-      serie: '',
-      aquisicao: 'consignado',
-      dataEntrada: hoje,
-      vendedor: {
-        nome: (b.nome||'').trim(),
-        tel: (b.whatsapp||'').trim(),
-        email: '', cpf: '',
-        cidade: (b.cidade||'').trim(),
-        estado: (b.estado||'').trim()
-      },
-      captacaoId: String(id),
-      captacaoObs: [b.suspensao,b.freios,b.relacao,b.rodas,b.outros_componentes].filter(Boolean).join(' / '),
-      vendida: false,
-      criadoEm: new Date().toISOString()
-    };
-
-    const ref = await _add(_col(db, 'bikes'), novaBike);
-    await loadData();
-    alert('✅ Bike migrada para o Estoque!\n\nAgora vá ao Estoque, clique em "Registrar venda" para preencher os dados do comprador e confirmar a transação. Ela aparecerá automaticamente na aba Vendidas.');
-    switchTab('estoque');
-  } catch(e) {
-    console.error('Erro ao migrar:', e);
-    alert('Erro ao migrar bike: ' + e.message);
-  }
-};
+// capMigrarEstoque movida para o módulo principal
 window.capDelete = capDelete;
 window.capCopyDesc = function(btn) {
   if (_capDescAtual) {
