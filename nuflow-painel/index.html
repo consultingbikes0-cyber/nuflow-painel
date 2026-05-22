@@ -243,9 +243,9 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <button onclick="fecharCadastroRapido()" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:4px">×</button>
     </div>
     <div class="sell-grid">
-      <div class="fg"><label>Marca *</label><input id="rq-marca" type="text" placeholder="ex: Specialized" list="marcas-list"></div>
-      <div class="fg"><label>Modelo *</label><input id="rq-modelo" type="text" placeholder="ex: Stumpjumper"></div>
-      <div class="fg"><label>Valor acordado (R$) *</label><input id="rq-valor" type="number" placeholder="ex: 15000" oninput="calcComissaoRapido()"></div>
+      <div class="fg"><label>Marca</label><input id="rq-marca" type="text" placeholder="ex: Specialized" list="marcas-list"></div>
+      <div class="fg"><label>Modelo</label><input id="rq-modelo" type="text" placeholder="ex: Stumpjumper"></div>
+      <div class="fg"><label>Valor acordado (R$)</label><input id="rq-valor" type="number" placeholder="ex: 15000" oninput="calcComissaoRapido()"></div>
       <div class="fg"><label>Comissão (R$)</label>
         <input id="rq-comissao" type="number" placeholder="calculada automaticamente">
         <span id="rq-com-preview" style="font-size:11px;color:var(--green);font-family:'DM Mono',monospace;margin-top:3px;display:block"></span>
@@ -512,27 +512,27 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <div class="form-block">
     <div class="form-block-title"><div class="fdot fdot-green"></div>Nova bike</div>
     <div class="grid2" style="gap:14px">
-      <div class="fg"><label>Marca *</label><input id="n-marca" type="text" placeholder="Trek, Specialized, Santa Cruz..."></div>
-      <div class="fg"><label>Modelo *</label><input id="n-modelo" type="text" placeholder="Slash, Enduro, Megatower..."></div>
+      <div class="fg"><label>Marca</label><input id="n-marca" type="text" placeholder="Trek, Specialized, Santa Cruz..."></div>
+      <div class="fg"><label>Modelo</label><input id="n-modelo" type="text" placeholder="Slash, Enduro, Megatower..."></div>
       <div class="fg"><label>Versão</label><input id="n-versao" type="text" placeholder="ex: GX Eagle, S-Works..."></div>
       <div class="fg"><label>Ano</label><select id="n-ano" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option><option>2017</option><option>2016</option><option>2015</option><option>2014</option><option>2013</option><option>2012</option></select></div>
-      <div class="fg"><label>Tamanho *</label><input id="n-tamanho" type="text" placeholder="S, M, L, XL..."></div>
+      <div class="fg"><label>Tamanho</label><input id="n-tamanho" type="text" placeholder="S, M, L, XL..."></div>
       <div class="fg"><label>Tipo</label>
         <select id="n-tipo"><option value="">Selecione</option><option>Trail</option><option>Enduro</option><option>Downhill</option><option>E-MTB</option><option>XC</option><option>Speed</option><option>Gravel</option><option>Urban</option></select>
       </div>
       <div class="fg"><label>Aquisição</label>
         <select id="n-aquisicao" onchange="toggleProprioBlock()"><option value="consignado">Consignado</option><option value="proprio">Compra própria</option></select>
       </div>
-      <div class="fg"><label>Valor acordado (R$) *</label><input id="n-valor" type="number" min="0" placeholder="ex: 15000" oninput="calcComissao()"></div>
-      <div class="fg"><label>Data de entrada *</label><input id="n-data" type="date"></div>
+      <div class="fg"><label>Valor acordado (R$)</label><input id="n-valor" type="number" min="0" placeholder="ex: 15000" oninput="calcComissao()"></div>
+      <div class="fg"><label>Data de entrada</label><input id="n-data" type="date"></div>
       <div class="fg"><label>Número de série</label><input id="n-serie" type="text" placeholder="ex: WTU123456"></div>
       <div class="fg gcol2"><label>Comissão calculada</label><div class="com-preview" id="com-preview">Preencha o valor</div></div>
       <div class="fg gcol2">
         <div class="proprio-block" id="proprio-block">
           <div style="font-size:11px;color:var(--purple);text-transform:uppercase;letter-spacing:.08em;font-family:'DM Mono',monospace;margin-bottom:1rem;">Detalhes compra própria</div>
           <div class="grid2">
-            <div class="fg"><label>Valor pago (custo) *</label><input id="n-custo" type="number" min="0" placeholder="ex: 10000" oninput="calcLucro()"></div>
-            <div class="fg"><label>Preço estimado de venda *</label><input id="n-preco-est" type="number" min="0" placeholder="ex: 14000" oninput="calcLucro()"></div>
+            <div class="fg"><label>Valor pago (custo)</label><input id="n-custo" type="number" min="0" placeholder="ex: 10000" oninput="calcLucro()"></div>
+            <div class="fg"><label>Preço estimado de venda</label><input id="n-preco-est" type="number" min="0" placeholder="ex: 14000" oninput="calcLucro()"></div>
           </div>
           <div id="lucro-preview" style="margin-top:10px;padding:10px 12px;background:var(--bg4);border-radius:var(--radius-sm);font-family:'DM Mono',monospace;font-size:13px;color:var(--text3);">Preencha custo e preço estimado</div>
         </div>
@@ -542,11 +542,11 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <div class="form-block">
     <div class="form-block-title"><div class="fdot fdot-purple"></div>Dados do vendedor / consignante</div>
     <div class="grid2" style="gap:14px">
-      <div class="fg" style="position:relative"><label>Nome completo *</label>
+      <div class="fg" style="position:relative"><label>Nome completo</label>
         <input id="v-nome" type="text" placeholder="João da Silva" oninput="buscarClientePorNome(this.value)" autocomplete="off">
         <div id="v-nome-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-sm);z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px #0006"></div>
       </div>
-      <div class="fg" style="position:relative"><label>CPF *</label>
+      <div class="fg" style="position:relative"><label>CPF</label>
         <input id="v-cpf" type="text" placeholder="000.000.000-00" oninput="maskCPF(this);buscarClientePorCPF(this.value)" autocomplete="off">
         <div id="v-cpf-suggestion" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--green);border-radius:var(--radius-sm);z-index:100;font-size:13px;padding:.75rem 1rem;cursor:pointer;box-shadow:0 4px 16px #0006"
           onclick="preencherClienteCadastro()">
@@ -2930,14 +2930,8 @@ window.cadastrarEGerarConsignacao=async function(){
   const aquisicao=g('n-aquisicao')||'consignado';
   const valor=g('n-valor'),dataEntrada=g('n-data')||new Date().toISOString().split('T')[0];
   const custo=g('n-custo'),precoEst=g('n-preco-est');
-  const faltando=[];
-  if(!marca)faltando.push('Marca');if(!modelo)faltando.push('Modelo');
-  if(!versao)faltando.push('Versão / Ano');if(!tamanho)faltando.push('Tamanho');
-  if(!valor)faltando.push('Valor acordado');
-  if(!g('v-nome'))faltando.push('Nome do vendedor');
-  if(!g('v-cpf'))faltando.push('CPF do vendedor');
-  if(!g('v-email'))faltando.push('E-mail do vendedor');
-  if(faltando.length){alert('Faltam:\n• '+faltando.join('\n• '));return;}
+  // Sem campos obrigatórios — apenas e-mail do vendedor é necessário para gerar contrato
+  if(!g('v-email')){alert('Para gerar o contrato, informe o e-mail do vendedor.');return;}
   const msgEl=document.getElementById('consig-msg');
   const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
   setMsg('Cadastrando bike...');
@@ -3174,19 +3168,11 @@ window.cadastrarBike=async function(){
   const aquisicao=g('n-aquisicao')||'consignado';
   const valor=g('n-valor'),dataEntrada=g('n-data')||new Date().toISOString().split('T')[0];
   const custo=g('n-custo'),precoEst=g('n-preco-est');
-  const faltando=[];
-  if(!marca)faltando.push('Marca');if(!modelo)faltando.push('Modelo');
-  if(!versao)faltando.push('Versão / Ano');if(!tamanho)faltando.push('Tamanho');
-  if(!valor)faltando.push('Valor acordado');
-  if(aquisicao==='proprio'&&!custo)faltando.push('Valor pago');
-  if(aquisicao==='proprio'&&!precoEst)faltando.push('Preço estimado');
-  if(!g('v-nome'))faltando.push('Nome do vendedor');
-  if(!g('v-cpf'))faltando.push('CPF do vendedor');
-  if(faltando.length){alert('Faltam:\n• '+faltando.join('\n• '));return;}
+  // Sem campos obrigatórios — cadastrar com o que foi preenchido
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:g('v-estado').toUpperCase()};
   const serie=g('n-serie');
-  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:Number(valor),dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
-  if(aquisicao==='proprio'){data.custo=Number(custo);data.precoEst=Number(precoEst);}
+  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:parseBRL(valor)||0,dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
+  if(aquisicao==='proprio'){data.custo=Number(custo)||0;data.precoEst=Number(precoEst)||0;}
   setSyncStatus('saving');
   try{
     await addDoc(bikesCol,data);
@@ -4846,6 +4832,51 @@ async function loadCapData() {
 
 async function capUpdateStatus(id, status) {
   await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'PATCH', body:JSON.stringify({status:status})});
+
+  // Quando marcada como vendida, criar bike no estoque do Firebase
+  if(status === 'vendido'){
+    const b = capData.find(function(x){return x.id===id;});
+    if(b){
+      try{
+        // Verificar se já foi migrada
+        const jaExiste = bikes.find(function(bk){return bk.captacaoId===String(id);});
+        if(!jaExiste){
+          const novaBike = {
+            marca: b.marca||'',
+            modelo: b.modelo||'',
+            versao: b.versao||'',
+            tipo: b.tipo||'',
+            tamanho: b.tamanho||'',
+            ano: b.ano?String(b.ano):'',
+            valor: Number(b.preco_pedido||0),
+            precoEst: Number(b.preco_pedido||0),
+            serie: '',cor:'',
+            aquisicao: 'consignado',
+            dataEntrada: new Date().toISOString().split('T')[0],
+            vendedor: {
+              nome: b.nome||'',
+              tel: (b.whatsapp||'').replace(/\D/g,'').replace(/^(\d{2})(\d{5})(\d{4})$/,'($1) $2-$3'),
+              email:'',cpf:'',
+              cidade: b.cidade||'',estado: b.estado||''
+            },
+            captacaoId: String(id),
+            vendida: false,
+            criadoEm: new Date().toISOString()
+          };
+          const {addDoc:_add, collection:_col} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+          await _add(_col(db,'bikes'), novaBike);
+          await loadData();
+          alert('✅ Bike migrada para o Estoque!\nComplete as informações na aba Estoque antes de registrar a venda.');
+        } else {
+          alert('Esta bike já está no Estoque (série: '+(jaExiste.serie||'sem série')+').');
+        }
+      }catch(e){
+        console.error('Erro ao migrar bike do Captação:', e);
+        alert('Erro ao migrar bike: '+e.message);
+      }
+    }
+  }
+
   var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
   capData = Array.isArray(data) ? data : [];
   var novos = capData.filter(function(b){return b.status==='novo';}).length;
