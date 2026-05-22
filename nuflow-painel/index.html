@@ -844,13 +844,31 @@ function renderEstoque(){
     const hasCheck=!!b.bikeCheck;
     const nota=b.notaFinal??b.notaAuto??null;
     const hasNF=b.temNF==='sim';
-    return `<div class="bike-card ${slow?'slow':''} ${isProprio?'proprio-card':''}">
-      <div class="bike-top">
+    const plats=b.plataformas||{};
+    const PLAT_LIST=[
+      {key:'plat_catálogo_wpp',label:'WPP'},
+      {key:'plat_site_próprio',label:'Site'},
+      {key:'plat_instagram',label:'Insta'},
+      {key:'plat_facebook',label:'FB'},
+      {key:'plat_olx',label:'OLX'}
+    ];
+    const accentColor=slow?'var(--red)':isProprio?'var(--purple)':'var(--green)';
+
+    return `<div class="bike-card ${slow?'slow':''} ${isProprio?'proprio-card':''}" style="padding:0;overflow:hidden;border-left:3px solid ${accentColor}">
+
+      <!-- Topo: nome + badges -->
+      <div style="padding:.875rem 1rem .625rem;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div>
-          <div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>${b.ano?` <span style="font-size:11px;font-weight:500;background:var(--bg4);padding:1px 7px;border-radius:10px;color:var(--text3);font-family:'DM Mono',monospace">${b.ano}</span>`:''}</div>
-          <div class="bike-sub-info">${[b.tipo,b.tamanho].filter(Boolean).join(' · ')}</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text)">
+            ${b.marca} ${b.modelo}
+            <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>
+            ${b.ano?`<span style="font-size:11px;font-weight:500;background:var(--bg4);padding:1px 7px;border-radius:10px;color:var(--text3);font-family:'DM Mono',monospace;margin-left:4px">${b.ano}</span>`:''}
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;font-family:'DM Mono',monospace">
+            ${[b.tipo,b.tamanho,b.vendedor?.nome?'Vendedor: '+b.vendedor.nome.split(' ')[0]:null].filter(Boolean).join(' · ')}
+          </div>
         </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
           ${nota!==null?`<div class="nota-badge nota-${notaClass(nota)}">${nota}</div>`:''}
           ${isProprio?'<span class="badge badge-proprio">Própria</span>':''}
           ${hasCheck?'<span class="badge badge-check">✓ Check</span>':'<span class="badge badge-pending">Sem check</span>'}
@@ -858,94 +876,86 @@ function renderEstoque(){
           <span class="badge ${slow?'badge-slow':'badge-ok'}">${dias}d</span>
         </div>
       </div>
-      <div class="bike-grid">
-        <div><div class="bike-field-label">Valor</div><div class="bike-field-value">${fmtRInt(b.valor)}</div></div>
+
+      <!-- Meio: métricas -->
+      <div style="padding:.5rem 1rem;display:flex;gap:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg3)">
+        <div style="flex:1;padding:0 12px 0 0;border-right:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace;margin-bottom:2px">Valor</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text)">${fmtRInt(b.valor)}</div>
+        </div>
         ${isProprio
-          ?`<div><div class="bike-field-label">Custo</div><div class="bike-field-value" style="color:var(--red)">${b.custo?fmtRInt(b.custo):'—'}</div></div>
-             <div><div class="bike-field-label">Lucro est.</div><div class="bike-field-value" style="color:var(--green)">${lucroEst?fmtRInt(lucroEst):'—'}</div></div>`
-          :`<div><div class="bike-field-label">Comissão</div><div class="bike-field-value" style="color:var(--green)">${fmtRInt(com)}${rawCom<COM_PISO||rawCom>COM_TETO?`<div style="font-size:10px;color:var(--amber)">${rawCom<COM_PISO?'piso':'teto'} aplicado</div>`:''}</div></div>`
+          ?`<div style="flex:1;padding:0 12px;border-right:1px solid var(--border)">
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace;margin-bottom:2px">Custo</div>
+              <div style="font-size:14px;font-weight:600;color:var(--red)">${b.custo?fmtRInt(b.custo):'—'}</div>
+            </div>
+            <div style="flex:1;padding:0 12px;border-right:1px solid var(--border)">
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace;margin-bottom:2px">Lucro est.</div>
+              <div style="font-size:14px;font-weight:600;color:var(--green)">${lucroEst?fmtRInt(lucroEst):'—'}</div>
+            </div>`
+          :`<div style="flex:1;padding:0 12px;border-right:1px solid var(--border)">
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace;margin-bottom:2px">Comissão</div>
+              <div style="font-size:14px;font-weight:600;color:var(--green)">${fmtRInt(com)}${rawCom<COM_PISO||rawCom>COM_TETO?`<span style="font-size:10px;color:var(--amber);margin-left:4px">${rawCom<COM_PISO?'piso':'teto'}</span>`:''}</div>
+            </div>`
         }
-        <div><div class="bike-field-label">Entrada</div><div class="bike-field-value">${new Date(b.dataEntrada+'T12:00:00').toLocaleDateString('pt-BR')}</div></div>
-        <div><div class="bike-field-label">Dias</div><div class="bike-field-value">${dias}d</div></div>
-        ${b.serie?`<div><div class="bike-field-label">Nº Série</div><div class="bike-field-value" style="font-size:11px">${b.serie}</div></div>`:''}
-        ${b.vendedor?.nome?`<div><div class="bike-field-label">Vendedor</div><div class="bike-field-value">${b.vendedor.nome.split(' ')[0]}</div></div>`:''}
-      </div>
-      <div class="bike-actions">
-        <button class="btn btn-sm" onclick="toggleSell('${b._docId}')">Registrar venda</button>
-        <button class="btn btn-sm btn-teal" onclick="abrirBikeCheck('${b._docId}')">
-          ${!hasCheck?'Fazer bike check':(()=>{const s=b.bikeCheckSalvoEm||b.criadoEm;const d=s?Math.floor((new Date()-new Date(s))/86400000):0;return d<=5?'✏️ Editar bike check':'✓ Ver bike check';})()}
-        </button>
-        ${(()=>{const dc=b.criadoEm?Math.floor((new Date()-new Date(b.criadoEm))/86400000):999;return dc<=10?`<button class="btn btn-sm btn-blue" onclick="abrirEditarBike('${b._docId}')">✏️ Editar bike</button>`:''})()}
-        ${hasNF&&b.nfURL?`<button class="btn btn-sm btn-blue" onclick="window.open('${b.nfURL}','_blank')">📄 NF</button>`:''}
-        <button class="btn btn-sm btn-amber" onclick="reenviarContratoConsig('${b._docId}')" title="${b.contratoConsigStatus?'Contrato: '+b.contratoConsigStatus:'Sem contrato gerado'}">
-          ${b.contratoConsigD4SignUUID?'🔄 Reenviar atualizado':'📄 Gerar contrato consig.'}
-        </button>
-        <span id="reenvio-msg-${b._docId}" style="display:none;font-size:11px;font-family:'DM Mono',monospace;color:var(--green)"></span>
-        <button class="btn btn-sm btn-danger" onclick="removerBike('${b._docId}')">Remover</button>
+        <div style="flex:1;padding:0 12px;border-right:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace;margin-bottom:2px">Entrada</div>
+          <div style="font-size:13px;font-weight:500;color:var(--text)">${new Date(b.dataEntrada+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</div>
+        </div>
+        ${b.serie?`<div style="flex:1;padding:0 0 0 12px">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace;margin-bottom:2px">Série</div>
+          <div style="font-size:12px;font-weight:500;color:var(--text2)">${b.serie}</div>
+        </div>`:'<div style="flex:1"></div>'}
       </div>
 
-      <!-- Plataformas de anúncio -->
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center">
-        <span style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.06em;margin-right:2px">Anunciado em:</span>
-        ${['Catálogo WPP','Site próprio','Instagram','Facebook','OLX'].map(p=>{
-          const key='plat_'+p.replace(/\s+/g,'_').toLowerCase();
-          const ativo=(b.plataformas||{})[key];
-          return `<button onclick="togglePlataforma('${b._docId}','${key}',${!ativo})" style="padding:3px 10px;border-radius:20px;font-size:11px;font-family:'DM Sans',sans-serif;cursor:pointer;border:1px solid ${ativo?'var(--green)':'var(--border2)'};background:${ativo?'var(--green-dim)':'transparent'};color:${ativo?'var(--green)':'var(--text3)'};transition:all .15s">${ativo?'✓ ':''} ${p}</button>`;
+      <!-- Plataformas -->
+      <div style="padding:.5rem 1rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.05em">Anúncios:</span>
+        ${PLAT_LIST.map(p=>{
+          const ativo=plats[p.key];
+          return `<button onclick="togglePlataforma('${b._docId}','${p.key}',${!ativo})"
+            style="padding:2px 9px;border-radius:20px;font-size:11px;cursor:pointer;border:1px solid ${ativo?'var(--green)':'var(--border2)'};background:${ativo?'var(--green-dim)':'transparent'};color:${ativo?'var(--green)':'var(--text3)'};transition:all .15s;font-family:'DM Sans',sans-serif">
+            ${ativo?'✓ ':''} ${p.label}
+          </button>`;
         }).join('')}
       </div>
 
-      <div class="sell-panel" id="edit-bike-${b._docId}">
-        <div class="panel-title">✏️ Editar bike e proprietário</div>
-        <div style="font-size:11px;color:var(--amber);font-family:'DM Mono',monospace;margin-bottom:1rem">Disponível por 10 dias após o cadastro</div>
-        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.75rem">Bike</div>
-        <div class="sell-grid" style="margin-bottom:1.25rem">
-          <div class="fg"><label>Marca</label><input type="text" id="eb-marca-${b._docId}" value="${b.marca||''}"></div>
-          <div class="fg"><label>Modelo</label><input type="text" id="eb-modelo-${b._docId}" value="${b.modelo||''}"></div>
-          <div class="fg"><label>Versão</label><input type="text" id="eb-versao-${b._docId}" value="${b.versao||''}"></div>
-          <div class="fg"><label>Ano</label><select id="eb-ano-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none"><option value="">Ano</option><option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option><option>2017</option><option>2016</option><option>2015</option><option>2014</option><option>2013</option><option>2012</option></select></div>
-          <div class="fg"><label>Tipo</label><select id="eb-tipo-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
-            ${['Trail','E-MTB','Enduro','XC','DH','Gravel','Outro'].map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}
-          </select></div>
-          <div class="fg"><label>Tamanho</label><input type="text" id="eb-tamanho-${b._docId}" value="${b.tamanho||''}"></div>
-          <div class="fg"><label>Nº Série</label><input type="text" id="eb-serie-${b._docId}" value="${b.serie||''}"></div>
-          <div class="fg"><label>Valor acordado (R$)</label><input type="text" id="eb-valor-${b._docId}" value="${b.valor||''}" oninput="calcComissaoEditBike('${b._docId}')"></div>
-          <div class="fg"><label>Cor</label><input type="text" id="eb-cor-${b._docId}" value="${b.cor||''}"></div>
-        </div>
-        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.75rem">Proprietário</div>
-        <div class="sell-grid" style="margin-bottom:1rem">
-          <div class="fg"><label>Nome *</label><input type="text" id="eb-vnome-${b._docId}" value="${b.vendedor?.nome||''}"></div>
-          <div class="fg"><label>CPF</label><input type="text" id="eb-vcpf-${b._docId}" value="${b.vendedor?.cpf||''}"></div>
-          <div class="fg"><label>E-mail</label><input type="email" id="eb-vemail-${b._docId}" value="${b.vendedor?.email||''}"></div>
-          <div class="fg"><label>Telefone</label><input type="text" id="eb-vtel-${b._docId}" value="${b.vendedor?.tel||''}"></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="salvarEditarBike('${b._docId}')">Salvar alterações</button>
-          <button class="btn btn-sm" onclick="document.getElementById('edit-bike-${b._docId}').classList.remove('open')">Cancelar</button>
-          <span id="eb-msg-${b._docId}" style="display:none;font-size:12px;color:var(--green);font-family:'DM Mono',monospace;align-self:center">✓ Salvo!</span>
-        </div>
+      <!-- Rodapé: ações -->
+      <div style="padding:.625rem 1rem;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm btn-primary" onclick="toggleSell('${b._docId}')">Registrar venda</button>
+        <button class="btn btn-sm btn-teal" onclick="abrirBikeCheck('${b._docId}')">
+          ${!hasCheck?'Fazer bike check':(()=>{const s=b.bikeCheckSalvoEm||b.criadoEm;const d=s?Math.floor((new Date()-new Date(s))/86400000):0;return d<=5?'✏️ Editar bike check':'✓ Ver bike check';})()}
+        </button>
+        ${(()=>{const dc=b.criadoEm?Math.floor((new Date()-new Date(b.criadoEm))/86400000):999;return dc<=10?`<button class="btn btn-sm btn-blue" onclick="abrirEditarBike('${b._docId}')">✏️ Editar</button>`:''})()}
+        ${hasNF&&b.nfURL?`<button class="btn btn-sm btn-blue" onclick="window.open('${b.nfURL}','_blank')">📄 NF</button>`:''}
+        <button class="btn btn-sm btn-amber" onclick="reenviarContratoConsig('${b._docId}')" title="${b.contratoConsigStatus?'Contrato: '+b.contratoConsigStatus:'Sem contrato gerado'}">
+          ${b.contratoConsigD4SignUUID?'🔄 Reenviar contrato':'📄 Contrato consig.'}
+        </button>
+        <span id="reenvio-msg-${b._docId}" style="display:none;font-size:11px;font-family:'DM Mono',monospace;color:var(--green)"></span>
+        <button class="btn btn-sm btn-danger" onclick="removerBike('${b._docId}')" style="margin-left:auto">Remover</button>
       </div>
+
+      <!-- Painel venda + editar bike -->
       <div class="sell-panel" id="sell-${b._docId}">
         <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center">
           <span>Registrar venda</span>
           <span id="sv-rascunho-msg-${b._docId}" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace"></span>
         </div>
         <div class="sell-grid">
-          <div class="fg"><label>Nome do comprador *</label><input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>CPF comprador *</label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>Nome do comprador</label><input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>CPF comprador</label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>RG</label><input type="text" id="sv-rg-${b._docId}" placeholder="ex: M1431941" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>E-mail comprador *</label><input type="email" id="sv-email-${b._docId}" placeholder="email@email.com" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>Telefone / WhatsApp *</label><input type="text" id="sv-tel-${b._docId}" placeholder="(31) 9 9999-9999" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>E-mail comprador</label><input type="email" id="sv-email-${b._docId}" placeholder="email@email.com" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>Telefone / WhatsApp</label><input type="text" id="sv-tel-${b._docId}" placeholder="(31) 9 9999-9999" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>CEP</label><input type="text" id="sv-cep-${b._docId}" placeholder="00000-000" oninput="salvarRascunhoVenda('${b._docId}')" onblur="buscaCEPVenda(this,'${b._docId}')"></div>
           <div class="fg"><label>Endereço completo</label><input type="text" id="sv-end-${b._docId}" placeholder="Rua, nº, bairro" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Cidade</label><input type="text" id="sv-cidade-${b._docId}" placeholder="Belo Horizonte" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Estado</label><input type="text" id="sv-estado-${b._docId}" placeholder="MG" maxlength="2" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Data da venda</label><input type="date" id="sv-data-${b._docId}" value="${new Date().toISOString().split('T')[0]}" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>Valor de venda (R$) *</label><input type="number" id="sv-valor-${b._docId}" placeholder="${b.precoEst||b.valor}" oninput="calcComissaoVenda('${b._docId}');salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>Valor de venda (R$)</label><input type="number" id="sv-valor-${b._docId}" placeholder="${b.precoEst||b.valor}" oninput="calcComissaoVenda('${b._docId}');salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Valor do sinal (R$)</label><input type="number" id="sv-sinal-${b._docId}" placeholder="0" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Forma de pagamento</label>
             <select id="sv-pgto-${b._docId}" onchange="salvarRascunhoVenda('${b._docId}')">
-              <option>PIX</option><option>Transferência bancária</option>
-              <option>Dinheiro</option><option>Cartão</option><option>Outro</option>
+              <option>PIX</option><option>Transferência bancária</option><option>Dinheiro</option><option>Cartão</option><option>Outro</option>
             </select>
           </div>
           <div class="fg">
@@ -954,8 +964,7 @@ function renderEstoque(){
           </div>
           <div class="fg"><label>Canal de venda</label>
             <select id="sv-canal-${b._docId}" onchange="salvarRascunhoVenda('${b._docId}')">
-              <option>Instagram @_nuflow_</option><option>Instagram @nuflow_bikes</option>
-              <option>Indicação</option><option>WhatsApp</option><option>Outro</option>
+              <option>Instagram @_nuflow_</option><option>Instagram @nuflow_bikes</option><option>Indicação</option><option>WhatsApp</option><option>Outro</option>
             </select>
           </div>
         </div>
@@ -966,6 +975,40 @@ function renderEstoque(){
           <span id="contrato-msg-${b._docId}" style="display:none;font-size:12px;font-family:'DM Mono',monospace;color:var(--green)"></span>
         </div>
       </div>
+
+      <div class="sell-panel" id="edit-bike-${b._docId}">
+        <div class="panel-title">✏️ Editar bike e proprietário</div>
+        <div style="font-size:11px;color:var(--amber);font-family:'DM Mono',monospace;margin-bottom:1rem">Disponível por 10 dias após o cadastro</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.75rem">Bike</div>
+        <div class="sell-grid" style="margin-bottom:1.25rem">
+          <div class="fg"><label>Marca</label><input type="text" id="eb-marca-${b._docId}" value="${b.marca||''}"></div>
+          <div class="fg"><label>Modelo</label><input type="text" id="eb-modelo-${b._docId}" value="${b.modelo||''}"></div>
+          <div class="fg"><label>Versão</label><input type="text" id="eb-versao-${b._docId}" value="${b.versao||''}"></div>
+          <div class="fg"><label>Ano</label><select id="eb-ano-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+            <option value="">—</option>${[2025,2024,2023,2022,2021,2020,2019,2018,2017,2016,2015,2014,2013,2012].map(a=>`<option value="${a}" ${b.ano==a?'selected':''}>${a}</option>`).join('')}
+          </select></div>
+          <div class="fg"><label>Tipo</label><select id="eb-tipo-${b._docId}" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+            ${['Trail','E-MTB','Enduro','XC','DH','Gravel','Outro'].map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}
+          </select></div>
+          <div class="fg"><label>Tamanho</label><input type="text" id="eb-tamanho-${b._docId}" value="${b.tamanho||''}"></div>
+          <div class="fg"><label>Nº Série</label><input type="text" id="eb-serie-${b._docId}" value="${b.serie||''}"></div>
+          <div class="fg"><label>Valor (R$)</label><input type="text" id="eb-valor-${b._docId}" value="${b.valor||''}" oninput="calcComissaoEditBike('${b._docId}')"></div>
+          <div class="fg"><label>Cor</label><input type="text" id="eb-cor-${b._docId}" value="${b.cor||''}"></div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.75rem">Proprietário</div>
+        <div class="sell-grid" style="margin-bottom:1rem">
+          <div class="fg"><label>Nome</label><input type="text" id="eb-vnome-${b._docId}" value="${b.vendedor?.nome||''}"></div>
+          <div class="fg"><label>CPF</label><input type="text" id="eb-vcpf-${b._docId}" value="${b.vendedor?.cpf||''}"></div>
+          <div class="fg"><label>E-mail</label><input type="email" id="eb-vemail-${b._docId}" value="${b.vendedor?.email||''}"></div>
+          <div class="fg"><label>Telefone</label><input type="text" id="eb-vtel-${b._docId}" value="${b.vendedor?.tel||''}"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="salvarEditarBike('${b._docId}')">Salvar alterações</button>
+          <button class="btn btn-sm" onclick="document.getElementById('edit-bike-${b._docId}').classList.remove('open')">Cancelar</button>
+          <span id="eb-msg-${b._docId}" style="display:none;font-size:12px;color:var(--green);font-family:'DM Mono',monospace;align-self:center">✓ Salvo!</span>
+        </div>
+      </div>
+
     </div>`;
   }).join('');
 }
