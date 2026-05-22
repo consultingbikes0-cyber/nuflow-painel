@@ -599,6 +599,20 @@ let charts={};
 
 const COM_PISO=700,COM_TETO=4500,COM_PERC=0.08;
 
+// Converte valor digitado em pt-BR ("22.500" ou "22500" ou "22,500") para número
+function parseBRL(str){
+  if(!str)return 0;
+  const s=String(str).trim();
+  if(s.includes(',')){return Number(s.replace(/\./g,'').replace(',','.'));}
+  if(s.includes('.')){
+    const partes=s.split('.');
+    const ultima=partes[partes.length-1];
+    if(ultima.length===3)return Number(s.replace(/\./g,''));
+    return Number(s);
+  }
+  return Number(s)||0;
+}
+
 // ===== CHECK SECTIONS =====
 const CHECK_SECTIONS=[
   {key:'estrutura',title:'Estrutura',items:[
