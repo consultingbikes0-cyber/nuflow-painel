@@ -612,6 +612,7 @@ function parseBRL(str){
   }
   return Number(s)||0;
 }
+window.parseBRL=parseBRL;
 
 // ===== CHECK SECTIONS =====
 const CHECK_SECTIONS=[
@@ -3031,7 +3032,7 @@ window.abrirEditarBike=function(id){
 };
 
 window.calcComissaoEditBike=function(id){
-  const v=parseBRL(document.getElementById('eb-valor-'+id)?.value);
+  const v=window.parseBRL(document.getElementById('eb-valor-'+id)?.value);
   if(!v)return;
   const com=calcCom(v);
   const raw=v*COM_PERC;
@@ -3051,7 +3052,7 @@ window.salvarEditarBike=async function(id){
   const dc=bike.criadoEm?Math.floor((new Date()-new Date(bike.criadoEm))/86400000):999;
   if(dc>10){alert('Prazo de edição de 10 dias expirado.');return;}
 
-  const novoValor=parseBRL(document.getElementById('eb-valor-'+id)?.value)||bike.valor;
+  const novoValor=window.parseBRL(document.getElementById('eb-valor-'+id)?.value)||bike.valor;
   const updates={
     marca:g('eb-marca-'),modelo:g('eb-modelo-'),versao:g('eb-versao-'),
     ano:g('eb-ano-'),tipo:g('eb-tipo-'),tamanho:g('eb-tamanho-'),
@@ -3228,7 +3229,7 @@ window.cadastrarBike=async function(){
   // Sem campos obrigatórios
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
   const serie=g('n-serie');
-  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:parseBRL(valor)||0,dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
+  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:window.parseBRL(valor)||0,dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
   if(aquisicao==='proprio'){data.custo=Number(custo)||0;data.precoEst=Number(precoEst)||0;}
   setSyncStatus('saving');
   try{
@@ -3238,7 +3239,7 @@ window.cadastrarBike=async function(){
       salvarCliente('vendedor',{
         cpf:vendedor.cpf,nome:vendedor.nome,email:vendedor.email,
         tel:vendedor.tel,cidade:vendedor.cidade,estado:vendedor.estado,
-        valor:parseBRL(valor)||0,dataEntrada,marca,modelo,bikeId:docRef.id
+        valor:window.parseBRL(valor)||0,dataEntrada,marca,modelo,bikeId:docRef.id
       });
     }
     // Limpar formulário
