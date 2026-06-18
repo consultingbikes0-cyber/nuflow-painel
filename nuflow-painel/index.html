@@ -742,6 +742,7 @@ async function loadData(){
   // Renderiza primeiro, sem esperar limpeza
   await loadGastos();
   await loadFinanceiro();
+  await carregarClientesEmMemoria();
   updateCounts();renderEstoque();renderVendidas();renderBCPending();renderAlertas();renderProgressoMetas();
   // Limpeza roda em background sem bloquear
   setTimeout(()=>limparFotosAntigas().catch(()=>{}),3000);
@@ -4590,6 +4591,13 @@ let _clienteBusca = '';
 async function loadClientes() {
   const root = document.getElementById('clientes-root');
   if (root) root.innerHTML = '<div class="loading pulse">carregando...</div>';
+  await carregarClientesEmMemoria();
+  drawClientes();
+}
+
+// Carrega _clientesData sem tocar na UI da aba Clientes — usado para o autocomplete funcionar
+// em qualquer lugar do painel (cadastro de bike, registro de venda), mesmo sem visitar a aba Clientes.
+async function carregarClientesEmMemoria() {
   try {
     const {collection:_col, getDocs:_getDocs, orderBy:_orderBy, query:_query}
       = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
@@ -4599,14 +4607,9 @@ async function loadClientes() {
     console.warn('Erro ao carregar clientes:', e);
     _clientesData = [];
   }
-
-  // Se não há clientes, montar da memória de bikes
-  // Isso garante que mesmo sem coleção separada, a aba mostra dados úteis
   if(_clientesData.length === 0 && bikes.length > 0){
     _clientesData = gerarClientesDesBikes();
   }
-
-  drawClientes();
 }
 
 function gerarClientesDesBikes(){
