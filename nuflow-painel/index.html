@@ -528,7 +528,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <div class="fg"><label>Número de série</label><input id="n-serie" type="text" placeholder="ex: WTU123456"></div>
       <div class="fg gcol2"><label>Comissão calculada</label><div class="com-preview" id="com-preview">Preencha o valor</div></div>
       <div class="fg gcol2"><label>Observações para o contrato de consignação (opcional)</label>
-        <textarea id="n-obs-contrato" rows="2" placeholder="Escreva como preferir — o sistema formaliza automaticamente o tom antes de gerar o PDF. Ex: vendedor vai entregar a bike já com pneu novo" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;resize:vertical"></textarea>
+        <textarea id="n-obs-contrato" rows="2" placeholder="Escreva livremente — depois peça pra Claudete formalizar o texto antes de colar aqui. Ex: vendedor vai entregar a bike já com pneu novo" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;resize:vertical"></textarea>
       </div>
       <div class="fg gcol2">
         <div class="proprio-block" id="proprio-block">
@@ -986,7 +986,7 @@ function renderEstoque(){
             </select>
           </div>
           <div class="fg gcol2"><label>Observações para o contrato (opcional)</label>
-            <textarea id="sv-obs-contrato-${b._docId}" rows="2" placeholder="Escreva como preferir — o sistema formaliza automaticamente o tom antes de gerar o PDF. Ex: cliente pediu pra trocar o pneu antes de buscar a bike" oninput="salvarRascunhoVenda('${b._docId}')" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;resize:vertical">${b.obsContrato||''}</textarea>
+            <textarea id="sv-obs-contrato-${b._docId}" rows="2" placeholder="Escreva livremente — depois peça pra Claudete formalizar o texto antes de colar aqui. Ex: cliente pediu pra trocar o pneu antes de buscar a bike" oninput="salvarRascunhoVenda('${b._docId}')" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;resize:vertical">${b.obsContrato||''}</textarea>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1397,10 +1397,6 @@ window.gerarContratoVenda=async function(id){
     obsContrato:bike.obsContrato||''
   };
   try{
-    if(dados.obsContrato&&dados.obsContrato.trim()){
-      setMsg('✍️ Formalizando observações...');
-      dados.obsContrato=await formalizarTextoContrato(dados.obsContrato);
-    }
     setMsg('⏳ Gerando PDF...');
     const pdfBlob=gerarPDFContrato('venda',dados);
     const nomeArq=`contrato_venda_${dados.comprador.replace(/\s+/g,'_')}_${dados.dataVenda}.pdf`;
@@ -2693,27 +2689,6 @@ async function d4signReenviar(uuidDoc, email){
 }
 
 // ===== FORMALIZAR TEXTO LIVRE PARA TOM JURÍDICO (via API Anthropic) =====
-async function formalizarTextoContrato(textoLivre){
-  if(!textoLivre||!textoLivre.trim())return '';
-  try{
-    const response=await fetch('/.netlify/functions/formatar-contrato',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({texto:textoLivre.trim()})
-    });
-    if(!response.ok){
-      console.warn('[formalizarTextoContrato] proxy retornou erro:',response.status);
-      return textoLivre.trim();
-    }
-    const data=await response.json();
-    if(data.aviso)console.warn('[formalizarTextoContrato]',data.aviso);
-    return data.textoFormal||textoLivre.trim();
-  }catch(e){
-    console.warn('Erro ao formalizar texto, usando original:',e);
-    return textoLivre.trim();
-  }
-}
-
 function gerarPDFContrato(tipo, dados){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
@@ -2977,11 +2952,6 @@ window.gerarContrato=async function(id){
   const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
   setMsg('Gerando PDF...');
   try{
-    if(dados.obsContrato&&dados.obsContrato.trim()){
-      setMsg('✍️ Formalizando observações...');
-      dados.obsContrato=await formalizarTextoContrato(dados.obsContrato);
-    }
-    setMsg('⏳ Gerando PDF...');
     const pdfBlob=gerarPDFContrato('venda',dados);
     const nomeArq=`contrato_venda_${dados.comprador.replace(/\s+/g,'_')}_${dados.dataVenda}.pdf`;
     const sigVenda=[
@@ -3025,11 +2995,6 @@ window.gerarContratoConsignacao=async function(bikeId,msgElId){
     obsContrato:bike.obsContratoConsig||''
   };
   try{
-    if(dados.obsContrato&&dados.obsContrato.trim()){
-      setMsg('✍️ Formalizando observações...');
-      dados.obsContrato=await formalizarTextoContrato(dados.obsContrato);
-    }
-    setMsg('⏳ Gerando PDF...');
     const pdfBlob=gerarPDFContrato('consignacao',dados);
     const nomeArq=`contrato_consignacao_${(v.nome||'vendedor').replace(/\s+/g,'_')}_${bike.dataEntrada||'2026'}.pdf`;
     const sigConsig=[
