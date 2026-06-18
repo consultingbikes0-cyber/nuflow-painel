@@ -959,8 +959,22 @@ function renderEstoque(){
           <span id="sv-rascunho-msg-${b._docId}" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace"></span>
         </div>
         <div class="sell-grid">
-          <div class="fg"><label>Nome do comprador</label><input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>CPF comprador</label><input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg" style="position:relative">
+            <label>Nome do comprador</label>
+            <input type="text" id="sv-comp-${b._docId}" placeholder="Nome completo" autocomplete="off"
+              oninput="salvarRascunhoVenda('${b._docId}');buscarClientePorNome(this.value,'sv-comp-${b._docId}','sv-cpf-${b._docId}','sv-email-${b._docId}','sv-tel-${b._docId}','sv-cidade-${b._docId}','sv-estado-${b._docId}','sv-comp-sug-${b._docId}')">
+            <div id="sv-comp-sug-${b._docId}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-sm);z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px #0006"></div>
+          </div>
+          <div class="fg" style="position:relative">
+            <label>CPF comprador</label>
+            <input type="text" id="sv-cpf-${b._docId}" placeholder="000.000.000-00" autocomplete="off"
+              oninput="salvarRascunhoVenda('${b._docId}');maskCPF(this);buscarClientePorCPF(this.value,'sv-cpf-${b._docId}','sv-comp-${b._docId}','sv-email-${b._docId}','sv-tel-${b._docId}','sv-cidade-${b._docId}','sv-estado-${b._docId}','sv-cpf-sug-${b._docId}')">
+            <div id="sv-cpf-sug-${b._docId}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--green);border-radius:var(--radius-sm);z-index:100;font-size:13px;padding:.75rem 1rem;cursor:pointer;box-shadow:0 4px 16px #0006" onclick="preencherClienteCadastro()">
+              <div style="font-size:10px;color:var(--green);font-family:'DM Mono',monospace;text-transform:uppercase;margin-bottom:4px">✓ Cliente encontrado — clique para preencher</div>
+              <div id="sv-cpf-sug-${b._docId}-nome" style="font-weight:600;color:var(--text)"></div>
+              <div id="sv-cpf-sug-${b._docId}-info" style="font-size:12px;color:var(--text3);margin-top:2px"></div>
+            </div>
+          </div>
           <div class="fg"><label>RG</label><input type="text" id="sv-rg-${b._docId}" placeholder="ex: M1431941" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>E-mail comprador</label><input type="email" id="sv-email-${b._docId}" placeholder="email@email.com" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Telefone / WhatsApp</label><input type="text" id="sv-tel-${b._docId}" placeholder="(31) 9 9999-9999" oninput="salvarRascunhoVenda('${b._docId}')"></div>
@@ -3177,34 +3191,46 @@ window.toggleProprioBlock=function(){
   if(bl)bl.classList.toggle('show',aq==='proprio');
   window.calcComissao();
 };
-// ===== AUTOCOMPLETE CLIENTES NO CADASTRO =====
+// ===== AUTOCOMPLETE CLIENTES NO CADASTRO E VENDA =====
 let _clienteSugerido = null;
 
-window.buscarClientePorCPF=function(cpfRaw){
+// prefix: 'v-' para cadastro de bike (vendedor), 'sv-comp-ID' ou similar para venda (comprador)
+// fieldMap permite mapear nomes de campos diferentes (cadastro usa v-nome, venda usa sv-comp-ID)
+window.buscarClientePorCPF=function(cpfRaw,cpfFieldId,nomeFieldId,emailFieldId,telFieldId,cidadeFieldId,estadoFieldId,suggestionBoxId){
+  // Modo retrocompatível: se só 1 argumento, assume campos do cadastro de bike (v-*)
+  if(arguments.length===1){
+    cpfFieldId='v-cpf';nomeFieldId='v-nome';emailFieldId='v-email';telFieldId='v-tel';
+    cidadeFieldId='v-cidade';estadoFieldId='v-estado';suggestionBoxId='v-cpf-suggestion';
+  }
   const cpf=cpfRaw.replace(/\D/g,'');
-  const sug=document.getElementById('v-cpf-suggestion');
+  const sug=document.getElementById(suggestionBoxId);
   if(cpf.length<11){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
-  const found=_clientesData.find(c=>(c.cpf||'').replace(/\D/g,'')=== cpf);
+  const found=_clientesData.find(c=>(c.cpf||'').replace(/\D/g,'')===cpf);
   if(!found){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
-  _clienteSugerido=found;
+  _clienteSugerido={...found,_fields:{nomeFieldId,emailFieldId,telFieldId,cidadeFieldId,estadoFieldId,cpfFieldId}};
   if(sug){
     sug.style.display='block';
-    const nome=document.getElementById('v-cpf-suggestion-nome');
-    const info=document.getElementById('v-cpf-suggestion-info');
-    if(nome) nome.textContent=found.nome||'—';
-    if(info) info.textContent=[found.email,found.tel,found.cidade].filter(Boolean).join(' · ');
+    const nomeEl=document.getElementById(suggestionBoxId+'-nome');
+    const infoEl=document.getElementById(suggestionBoxId+'-info');
+    if(nomeEl) nomeEl.textContent=found.nome||'—';
+    if(infoEl) infoEl.textContent=[found.email,found.tel,found.cidade].filter(Boolean).join(' · ');
   }
 };
 
-window.buscarClientePorNome=function(nome){
-  const sug=document.getElementById('v-nome-suggestions');
+window.buscarClientePorNome=function(nome,nomeFieldId,cpfFieldId,emailFieldId,telFieldId,cidadeFieldId,estadoFieldId,suggestionBoxId){
+  if(arguments.length===1){
+    nomeFieldId='v-nome';cpfFieldId='v-cpf';emailFieldId='v-email';telFieldId='v-tel';
+    cidadeFieldId='v-cidade';estadoFieldId='v-estado';suggestionBoxId='v-nome-suggestions';
+  }
+  const sug=document.getElementById(suggestionBoxId);
   if(!sug)return;
   if(!nome||nome.length<2){sug.style.display='none';return;}
   const results=_clientesData.filter(c=>(c.nome||'').toLowerCase().includes(nome.toLowerCase())).slice(0,5);
   if(!results.length){sug.style.display='none';return;}
   sug.style.display='block';
+  const fieldsJson=JSON.stringify({nomeFieldId,cpfFieldId,emailFieldId,telFieldId,cidadeFieldId,estadoFieldId,suggestionBoxId}).replace(/"/g,'&quot;');
   sug.innerHTML=results.map(c=>`
-    <div onclick="preencherClienteCadastroById('${c._id}')"
+    <div onclick='preencherClienteCadastroById("${c._id}", ${JSON.stringify({nomeFieldId,cpfFieldId,emailFieldId,telFieldId,cidadeFieldId,estadoFieldId,suggestionBoxId})})'
       style="padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border)"
       onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
       <div style="font-weight:500;color:var(--text)">${c.nome}</div>
@@ -3214,29 +3240,38 @@ window.buscarClientePorNome=function(nome){
 
 window.preencherClienteCadastro=function(){
   if(!_clienteSugerido)return;
-  preencherClienteCadastroById(_clienteSugerido._id);
+  const f=_clienteSugerido._fields||{nomeFieldId:'v-nome',cpfFieldId:'v-cpf',emailFieldId:'v-email',telFieldId:'v-tel',cidadeFieldId:'v-cidade',estadoFieldId:'v-estado',suggestionBoxId:'v-cpf-suggestion'};
+  preencherClienteCadastroById(_clienteSugerido._id,f);
 };
 
-window.preencherClienteCadastroById=function(id){
+window.preencherClienteCadastroById=function(id,fields){
   const c=_clientesData.find(x=>x._id===id);
   if(!c)return;
+  fields=fields||{nomeFieldId:'v-nome',cpfFieldId:'v-cpf',emailFieldId:'v-email',telFieldId:'v-tel',cidadeFieldId:'v-cidade',estadoFieldId:'v-estado',suggestionBoxId:'v-nome-suggestions'};
   const s=(fid,val)=>{const el=document.getElementById(fid);if(el&&val)el.value=val;};
-  s('v-nome',c.nome);s('v-cpf',c.cpf);s('v-email',c.email);s('v-tel',c.tel);
-  s('v-cidade',c.cidade);s('v-estado',c.estado);
-  // Fechar sugestões
-  const sg1=document.getElementById('v-cpf-suggestion');if(sg1)sg1.style.display='none';
-  const sg2=document.getElementById('v-nome-suggestions');if(sg2)sg2.style.display='none';
+  s(fields.nomeFieldId,c.nome);s(fields.cpfFieldId,c.cpf);s(fields.emailFieldId,c.email);
+  s(fields.telFieldId,c.tel);s(fields.cidadeFieldId,c.cidade);s(fields.estadoFieldId,c.estado);
+  // Fechar sugestões — ambas as caixas possíveis
+  ['v-cpf-suggestion','v-nome-suggestions',fields.suggestionBoxId].forEach(boxId=>{
+    if(!boxId)return;
+    const sg=document.getElementById(boxId);if(sg)sg.style.display='none';
+  });
+  // Disparar cálculo de comissão se for campo de venda
+  if(fields.nomeFieldId&&fields.nomeFieldId.startsWith('sv-comp-')){
+    const bikeId=fields.nomeFieldId.replace('sv-comp-','');
+    if(typeof salvarRascunhoVenda==='function')salvarRascunhoVenda(bikeId);
+  }
   _clienteSugerido=null;
 };
 
-// Fechar sugestões ao clicar fora
+// Fechar sugestões ao clicar fora (qualquer caixa de sugestão aberta)
 document.addEventListener('click',e=>{
-  if(!e.target.closest('#v-cpf')&&!e.target.closest('#v-cpf-suggestion')){
-    const sg=document.getElementById('v-cpf-suggestion');if(sg)sg.style.display='none';
-  }
-  if(!e.target.closest('#v-nome')&&!e.target.closest('#v-nome-suggestions')){
-    const sg=document.getElementById('v-nome-suggestions');if(sg)sg.style.display='none';
-  }
+  document.querySelectorAll('[id$="-suggestion"], [id$="-suggestions"]').forEach(sg=>{
+    const inputId=sg.id.replace(/-suggestions?$/,'');
+    if(!e.target.closest('#'+inputId)&&!e.target.closest('#'+sg.id)){
+      sg.style.display='none';
+    }
+  });
 });
 
 window.maskCPF=function(el){el.value=el.value.replace(/\D/g,'').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').substring(0,14);};
@@ -4199,67 +4234,6 @@ function buildChart(id,type,labels,data,opts={}){
 }
 
 // ===== MASKS / CEP =====
-// ===== AUTOCOMPLETE CLIENTES NO CADASTRO =====
-// _clienteSugerido já declarado acima
-
-window.buscarClientePorCPF=function(cpfRaw){
-  const cpf=cpfRaw.replace(/\D/g,'');
-  const sug=document.getElementById('v-cpf-suggestion');
-  if(cpf.length<11){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
-  const found=_clientesData.find(c=>(c.cpf||'').replace(/\D/g,'')=== cpf);
-  if(!found){if(sug)sug.style.display='none';_clienteSugerido=null;return;}
-  _clienteSugerido=found;
-  if(sug){
-    sug.style.display='block';
-    const nome=document.getElementById('v-cpf-suggestion-nome');
-    const info=document.getElementById('v-cpf-suggestion-info');
-    if(nome) nome.textContent=found.nome||'—';
-    if(info) info.textContent=[found.email,found.tel,found.cidade].filter(Boolean).join(' · ');
-  }
-};
-
-window.buscarClientePorNome=function(nome){
-  const sug=document.getElementById('v-nome-suggestions');
-  if(!sug)return;
-  if(!nome||nome.length<2){sug.style.display='none';return;}
-  const results=_clientesData.filter(c=>(c.nome||'').toLowerCase().includes(nome.toLowerCase())).slice(0,5);
-  if(!results.length){sug.style.display='none';return;}
-  sug.style.display='block';
-  sug.innerHTML=results.map(c=>`
-    <div onclick="preencherClienteCadastroById('${c._id}')"
-      style="padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border)"
-      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-      <div style="font-weight:500;color:var(--text)">${c.nome}</div>
-      <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${[c.cpf,c.tel,c.cidade].filter(Boolean).join(' · ')}</div>
-    </div>`).join('');
-};
-
-window.preencherClienteCadastro=function(){
-  if(!_clienteSugerido)return;
-  preencherClienteCadastroById(_clienteSugerido._id);
-};
-
-window.preencherClienteCadastroById=function(id){
-  const c=_clientesData.find(x=>x._id===id);
-  if(!c)return;
-  const s=(fid,val)=>{const el=document.getElementById(fid);if(el&&val)el.value=val;};
-  s('v-nome',c.nome);s('v-cpf',c.cpf);s('v-email',c.email);s('v-tel',c.tel);
-  s('v-cidade',c.cidade);s('v-estado',c.estado);
-  // Fechar sugestões
-  const sg1=document.getElementById('v-cpf-suggestion');if(sg1)sg1.style.display='none';
-  const sg2=document.getElementById('v-nome-suggestions');if(sg2)sg2.style.display='none';
-  _clienteSugerido=null;
-};
-
-// Fechar sugestões ao clicar fora
-document.addEventListener('click',e=>{
-  if(!e.target.closest('#v-cpf')&&!e.target.closest('#v-cpf-suggestion')){
-    const sg=document.getElementById('v-cpf-suggestion');if(sg)sg.style.display='none';
-  }
-  if(!e.target.closest('#v-nome')&&!e.target.closest('#v-nome-suggestions')){
-    const sg=document.getElementById('v-nome-suggestions');if(sg)sg.style.display='none';
-  }
-});
 
 window.maskCPF=function(el){let v=el.value.replace(/\D/g,'').substring(0,11);v=v.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');el.value=v;};
 window.maskCEP=function(el){let v=el.value.replace(/\D/g,'').substring(0,8);v=v.replace(/(\d{5})(\d)/,'$1-$2');el.value=v;};
