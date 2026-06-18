@@ -2542,11 +2542,13 @@ window.registrarVenda=async function(id){
       });
     }catch(ef){console.warn("Erro financeiro auto:",ef);}
     // Salvar comprador no banco de clientes
-    salvarCliente('comprador', {
-      cpf: compradorCPF, nome: comprador, email: compradorEmail,
-      tel: compradorTel, cidade: compradorCidade, estado: compradorEstado,
-      valorVenda, dataVenda, marca: bike.marca, modelo: bike.modelo, bikeId: id
-    });
+    try{
+      await salvarCliente('comprador', {
+        cpf: compradorCPF, nome: comprador, email: compradorEmail,
+        tel: compradorTel, cidade: compradorCidade, estado: compradorEstado,
+        valorVenda, dataVenda, marca: bike.marca, modelo: bike.modelo, bikeId: id
+      });
+    }catch(ce){console.error('Erro ao salvar cliente comprador:',ce);}
     limparRascunhoVenda(id);
     await loadData();switchTab('vendidas');
   }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao registrar venda.\n'+e.message);}
@@ -3057,13 +3059,15 @@ window.cadastrarEGerarConsignacao=async function(){
     document.getElementById('n-data').value=new Date().toISOString().split('T')[0];
     document.getElementById('proprio-block')?.classList.remove('show');
     document.getElementById('com-preview').textContent='Preencha o valor';
-    // Salvar vendedor no banco de clientes
-    if (vendedor.cpf || vendedor.email) {
-      salvarCliente('vendedor', {
-        cpf: vendedor.cpf, nome: vendedor.nome, email: vendedor.email,
-        tel: vendedor.tel, cidade: vendedor.cidade, estado: vendedor.estado,
-        valor: Number(valor), dataEntrada, marca, modelo, bikeId: docRef.id
-      });
+    // Salvar vendedor no banco de clientes — sempre que houver algum dado (nome, cpf, email ou tel)
+    if (vendedor.nome || vendedor.cpf || vendedor.email || vendedor.tel) {
+      try{
+        await salvarCliente('vendedor', {
+          cpf: vendedor.cpf, nome: vendedor.nome, email: vendedor.email,
+          tel: vendedor.tel, cidade: vendedor.cidade, estado: vendedor.estado,
+          valor: Number(valor), dataEntrada, marca, modelo, bikeId: docRef.id
+        });
+      }catch(ce){console.error('Erro ao salvar cliente vendedor:',ce);}
     }
     await loadData();
     setMsg('Bike cadastrada! Gerando contrato...');
@@ -3308,13 +3312,15 @@ window.cadastrarBike=async function(){
   setSyncStatus('saving');
   try{
     const docRef=await addDoc(bikesCol,data);
-    // Salvar vendedor no banco de clientes
-    if(vendedor.cpf||vendedor.email){
-      salvarCliente('vendedor',{
-        cpf:vendedor.cpf,nome:vendedor.nome,email:vendedor.email,
-        tel:vendedor.tel,cidade:vendedor.cidade,estado:vendedor.estado,
-        valor:window.parseBRL(valor)||0,dataEntrada,marca,modelo,bikeId:docRef.id
-      });
+    // Salvar vendedor no banco de clientes — sempre que houver algum dado (nome, cpf, email ou tel)
+    if(vendedor.nome||vendedor.cpf||vendedor.email||vendedor.tel){
+      try{
+        await salvarCliente('vendedor',{
+          cpf:vendedor.cpf,nome:vendedor.nome,email:vendedor.email,
+          tel:vendedor.tel,cidade:vendedor.cidade,estado:vendedor.estado,
+          valor:window.parseBRL(valor)||0,dataEntrada,marca,modelo,bikeId:docRef.id
+        });
+      }catch(ce){console.error('Erro ao salvar cliente vendedor:',ce);}
     }
     // Limpar formulário
     ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie','n-obs-contrato',
@@ -5473,16 +5479,20 @@ window.capCopyDesc = function(btn) {
 async function salvarCliente(tipo, dados) {
   // tipo: 'comprador' | 'vendedor'
   // dados: {cpf, nome, email, tel, cidade, estado, ...bikeInfo}
-  if (!dados.cpf && !dados.email) return; // need at least one identifier
+  // Salva o cliente desde que haja QUALQUER identificador: cpf, email, telefone ou nome
+  if (!dados.cpf && !dados.email && !dados.tel && !dados.nome) {
+    console.warn('[salvarCliente] Nenhum dado para identificar o cliente — ignorado.');
+    return;
+  }
   try {
     const {collection:_col, getDocs:_getDocs, addDoc:_addDoc, updateDoc:_updateDoc, query:_query, where:_where, doc:_doc}
       = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     const clientesCol = _col(db, 'clientes');
-    
-    // Search by CPF first, then email
+
+    // Buscar cliente já existente: CPF → e-mail → telefone → nome (nesta ordem de prioridade)
     let existingId = null;
     let existingData = null;
-    
+
     if (dados.cpf) {
       const q = _query(clientesCol, _where('cpf', '==', dados.cpf));
       const snap = await _getDocs(q);
@@ -5493,7 +5503,18 @@ async function salvarCliente(tipo, dados) {
       const snap = await _getDocs(q);
       if (!snap.empty) { existingId = snap.docs[0].id; existingData = snap.docs[0].data(); }
     }
-    
+    if (!existingId && dados.tel) {
+      const q = _query(clientesCol, _where('tel', '==', dados.tel));
+      const snap = await _getDocs(q);
+      if (!snap.empty) { existingId = snap.docs[0].id; existingData = snap.docs[0].data(); }
+    }
+    if (!existingId && dados.nome) {
+      // Busca por nome exato (sem CPF/e-mail/telefone disponíveis) — usa _clientesData em memória para comparação case-insensitive
+      const nomeNorm = dados.nome.trim().toLowerCase();
+      const match = (_clientesData||[]).find(c => (c.nome||'').trim().toLowerCase() === nomeNorm);
+      if (match) { existingId = match._id; existingData = match; }
+    }
+
     const entrada = {
       tipo: tipo,
       data: dados.dataVenda || dados.dataEntrada || new Date().toISOString().split('T')[0],
@@ -5501,7 +5522,7 @@ async function salvarCliente(tipo, dados) {
       valor: dados.valorVenda || dados.valor || 0,
       bikeId: dados.bikeId || ''
     };
-    
+
     if (existingId) {
       // Update existing client
       const hist = existingData.historico || [];
@@ -5509,14 +5530,16 @@ async function salvarCliente(tipo, dados) {
       const update = { historico: hist, atualizadoEm: new Date().toISOString() };
       // Update contact info if newer
       if (dados.nome) update.nome = dados.nome;
+      if (dados.cpf) update.cpf = dados.cpf;
       if (dados.email) update.email = dados.email;
       if (dados.tel) update.tel = dados.tel;
       if (dados.cidade) update.cidade = dados.cidade;
       if (dados.estado) update.estado = dados.estado;
       await _updateDoc(_doc(db, 'clientes', existingId), update);
+      console.log('[salvarCliente] Cliente atualizado:', dados.nome||dados.cpf||dados.email||dados.tel);
     } else {
       // Create new client
-      await _addDoc(clientesCol, {
+      const novoRef = await _addDoc(clientesCol, {
         cpf: dados.cpf || '',
         nome: dados.nome || '',
         email: dados.email || '',
@@ -5527,8 +5550,15 @@ async function salvarCliente(tipo, dados) {
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString()
       });
+      console.log('[salvarCliente] Novo cliente criado:', dados.nome||dados.cpf||dados.email||dados.tel, novoRef.id);
+      // Atualizar lista em memória imediatamente para autocomplete funcionar sem precisar recarregar
+      _clientesData.unshift({
+        _id: novoRef.id, cpf: dados.cpf||'', nome: dados.nome||'', email: dados.email||'',
+        tel: dados.tel||'', cidade: dados.cidade||'', estado: dados.estado||'',
+        historico: [entrada], criadoEm: new Date().toISOString(), atualizadoEm: new Date().toISOString()
+      });
     }
-  } catch(e) { console.warn('Erro ao salvar cliente:', e); }
+  } catch(e) { console.error('[salvarCliente] Erro ao salvar cliente:', e); }
 }
 
 </script>
