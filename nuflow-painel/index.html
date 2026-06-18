@@ -527,6 +527,9 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <div class="fg"><label>Data de entrada</label><input id="n-data" type="date"></div>
       <div class="fg"><label>Número de série</label><input id="n-serie" type="text" placeholder="ex: WTU123456"></div>
       <div class="fg gcol2"><label>Comissão calculada</label><div class="com-preview" id="com-preview">Preencha o valor</div></div>
+      <div class="fg gcol2"><label>Observações para o contrato de consignação (opcional)</label>
+        <textarea id="n-obs-contrato" rows="2" placeholder="Escreva como preferir — o sistema formaliza automaticamente o tom antes de gerar o PDF. Ex: vendedor vai entregar a bike já com pneu novo" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;resize:vertical"></textarea>
+      </div>
       <div class="fg gcol2">
         <div class="proprio-block" id="proprio-block">
           <div style="font-size:11px;color:var(--purple);text-transform:uppercase;letter-spacing:.08em;font-family:'DM Mono',monospace;margin-bottom:1rem;">Detalhes compra própria</div>
@@ -982,6 +985,9 @@ function renderEstoque(){
               <option>Instagram @_nuflow_</option><option>Instagram @nuflow_bikes</option><option>Indicação</option><option>WhatsApp</option><option>Outro</option>
             </select>
           </div>
+          <div class="fg gcol2"><label>Observações para o contrato (opcional)</label>
+            <textarea id="sv-obs-contrato-${b._docId}" rows="2" placeholder="Escreva como preferir — o sistema formaliza automaticamente o tom antes de gerar o PDF. Ex: cliente pediu pra trocar o pneu antes de buscar a bike" oninput="salvarRascunhoVenda('${b._docId}')" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;resize:vertical">${b.obsContrato||''}</textarea>
+          </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="registrarVenda('${b._docId}')">Confirmar venda</button>
@@ -1387,9 +1393,15 @@ window.gerarContratoVenda=async function(id){
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
     cor:bike.cor||'',ano:bike.ano||'',
     nfNumero:bike.nfNumero||'',temNF:bike.temNF||false,
-    vendedorNome:v.nome||'',vendedorCPF:v.cpf||''
+    vendedorNome:v.nome||'',vendedorCPF:v.cpf||'',
+    obsContrato:bike.obsContrato||''
   };
   try{
+    if(dados.obsContrato&&dados.obsContrato.trim()){
+      setMsg('✍️ Formalizando observações...');
+      dados.obsContrato=await formalizarTextoContrato(dados.obsContrato);
+    }
+    setMsg('⏳ Gerando PDF...');
     const pdfBlob=gerarPDFContrato('venda',dados);
     const nomeArq=`contrato_venda_${dados.comprador.replace(/\s+/g,'_')}_${dados.dataVenda}.pdf`;
     const sigVenda=[
@@ -2471,6 +2483,7 @@ window.registrarVenda=async function(id){
   const compradorCEP=g('sv-cep-'+id);
   const valorSinal=Number(g('sv-sinal-'+id))||0;
   const formaPagamento=g('sv-pgto-'+id);
+  const obsContrato=g('sv-obs-contrato-'+id);
   const diasParaVender=dataVenda?Math.floor((new Date(dataVenda+'T12:00:00')-new Date(bike.dataEntrada+'T12:00:00'))/86400000):null;
   setSyncStatus('saving');
   try{
@@ -2478,7 +2491,7 @@ window.registrarVenda=async function(id){
       vendida:true,dataVenda,valorVenda,comissaoRecebida,canalVenda,
       comprador,compradorCPF,compradorRG,compradorEmail,compradorTel,
       compradorEnd,compradorCidade,compradorEstado,compradorCEP,
-      valorSinal,formaPagamento,diasParaVender
+      valorSinal,formaPagamento,obsContrato,diasParaVender
     });
     // Lançamento financeiro automático — divisão de comissão
     try{
@@ -2679,6 +2692,34 @@ async function d4signReenviar(uuidDoc, email){
   return d4signProxy({action:'reenviar', uuidDoc, email});
 }
 
+// ===== FORMALIZAR TEXTO LIVRE PARA TOM JURÍDICO (via API Anthropic) =====
+async function formalizarTextoContrato(textoLivre){
+  if(!textoLivre||!textoLivre.trim())return '';
+  try{
+    const response=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-6",
+        max_tokens:500,
+        messages:[{
+          role:"user",
+          content:`Reescreva o texto abaixo em tom jurídico-formal, adequado para constar como cláusula adicional em um contrato de compra/venda ou consignação de bicicleta. Mantenha todas as informações factuais exatamente como estão (valores, prazos, nomes, condições), apenas ajuste a linguagem para ser formal e juridicamente apropriada. Não adicione informações que não estejam no texto original. Responda APENAS com o texto reescrito, sem introduções, explicações ou comentários.
+
+Texto original:
+"${textoLivre.trim()}"`
+        }]
+      })
+    });
+    const data=await response.json();
+    const textBlock=(data.content||[]).find(b=>b.type==='text');
+    return textBlock?textBlock.text.trim():textoLivre.trim();
+  }catch(e){
+    console.warn('Erro ao formalizar texto, usando original:',e);
+    return textoLivre.trim();
+  }
+}
+
 function gerarPDFContrato(tipo, dados){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
@@ -2797,6 +2838,18 @@ function gerarPDFContrato(tipo, dados){
     campo('Sinal:',dados.valorSinal?`R$ ${Number(dados.valorSinal).toLocaleString('pt-BR')}`:'Não houve sinal');
     campo('Forma de pagamento:',dados.formaPagamento);
     campo('Data da venda:',dados.dataVenda?new Date(dados.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):'—');
+    if(dados.obsContrato&&dados.obsContrato.trim()){
+      secao('OBSERVAÇÕES ESPECÍFICAS');
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(70,70,70);
+      doc.splitTextToSize(dados.obsContrato,lw).forEach(l=>{
+        if(y>272){doc.addPage();y=MT;}
+        doc.text(l,ML,y);
+        y+=4.5;
+      });
+      y+=2;
+    }
     secao('CLÁUSULAS');
     paragrafo('1','Estado da Bicicleta','');
     subparagrafo('1.1','A INTERMEDIADORA declara que a bicicleta foi submetida a laudo técnico completo antes da entrega, encontrando-se em pleno funcionamento.');
@@ -2855,6 +2908,18 @@ function gerarPDFContrato(tipo, dados){
     campo('Valor de anúncio:',dados.valor_anuncio);
     campo('Comissão:','8% sobre o valor de venda (mínimo R$ 700,00 / máximo R$ 4.500,00)');
     campo('Multa por quebra de exclusividade (90 dias):',`5% = ${dados.valor_multa}`);
+    if(dados.obsContrato&&dados.obsContrato.trim()){
+      secao('OBSERVAÇÕES ESPECÍFICAS');
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(70,70,70);
+      doc.splitTextToSize(dados.obsContrato,lw).forEach(l=>{
+        if(y>272){doc.addPage();y=MT;}
+        doc.text(l,ML,y);
+        y+=4.5;
+      });
+      y+=2;
+    }
     secao('CLÁUSULAS');
     paragrafo('1','Objeto','A CONSIGNATÁRIA se compromete a empenhar seus melhores esforços para a venda da bicicleta descrita acima, mediante remuneração por comissão de 8% sobre o valor efetivo de venda.');
     paragrafo('2','Laudo Técnico','A bicicleta será submetida a laudo técnico completo por oficina especializada. Caso sejam identificados reparos necessários, o CONSIGNANTE será comunicado previamente com descrição dos problemas e estimativa de custo.');
@@ -2908,7 +2973,8 @@ window.gerarContrato=async function(id){
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
     cor:bike.cor||'',ano:bike.ano||'',
     nfNumero:bike.nfNumero||'',temNF:bike.temNF||false,
-    vendedorNome:v.nome||'',vendedorCPF:v.cpf||''
+    vendedorNome:v.nome||'',vendedorCPF:v.cpf||'',
+    obsContrato:g('sv-obs-contrato-'+id)||bike.obsContrato||''
   };
   if(!dados.comprador||!dados.compradorEmail){
     alert('Preencha nome e e-mail do comprador antes de gerar o contrato.');return;
@@ -2917,6 +2983,11 @@ window.gerarContrato=async function(id){
   const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
   setMsg('Gerando PDF...');
   try{
+    if(dados.obsContrato&&dados.obsContrato.trim()){
+      setMsg('✍️ Formalizando observações...');
+      dados.obsContrato=await formalizarTextoContrato(dados.obsContrato);
+    }
+    setMsg('⏳ Gerando PDF...');
     const pdfBlob=gerarPDFContrato('venda',dados);
     const nomeArq=`contrato_venda_${dados.comprador.replace(/\s+/g,'_')}_${dados.dataVenda}.pdf`;
     const sigVenda=[
@@ -2956,9 +3027,15 @@ window.gerarContratoConsignacao=async function(bikeId,msgElId){
     data_entrada:fmtD(bike.dataEntrada),
     valor_anuncio:'R$ '+Math.round(valor).toLocaleString('pt-BR'),
     valor_multa:'R$ '+Math.round(valor*0.05).toLocaleString('pt-BR'),
-    data_contrato:fmtD(bike.dataEntrada)
+    data_contrato:fmtD(bike.dataEntrada),
+    obsContrato:bike.obsContratoConsig||''
   };
   try{
+    if(dados.obsContrato&&dados.obsContrato.trim()){
+      setMsg('✍️ Formalizando observações...');
+      dados.obsContrato=await formalizarTextoContrato(dados.obsContrato);
+    }
+    setMsg('⏳ Gerando PDF...');
     const pdfBlob=gerarPDFContrato('consignacao',dados);
     const nomeArq=`contrato_consignacao_${(v.nome||'vendedor').replace(/\s+/g,'_')}_${bike.dataEntrada||'2026'}.pdf`;
     const sigConsig=[
@@ -2995,7 +3072,8 @@ window.cadastrarEGerarConsignacao=async function(){
   setMsg('Cadastrando bike...');
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:g('v-estado').toUpperCase()};
   const serie=g('n-serie');
-  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:Number(valor),dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
+  const obsContratoConsig=g('n-obs-contrato');
+  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:Number(valor),dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString()};
   if(aquisicao==='proprio'){data.custo=Number(custo);data.precoEst=Number(precoEst);}
   setSyncStatus('saving');
   try{
@@ -3229,7 +3307,8 @@ window.cadastrarBike=async function(){
   // Sem campos obrigatórios
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
   const serie=g('n-serie');
-  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:window.parseBRL(valor)||0,dataEntrada,serie,vendedor,vendida:false,criadoEm:new Date().toISOString()};
+  const obsContratoConsig=g('n-obs-contrato');
+  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:window.parseBRL(valor)||0,dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString()};
   if(aquisicao==='proprio'){data.custo=Number(custo)||0;data.precoEst=Number(precoEst)||0;}
   setSyncStatus('saving');
   try{
@@ -3243,7 +3322,7 @@ window.cadastrarBike=async function(){
       });
     }
     // Limpar formulário
-    ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie',
+    ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie','n-obs-contrato',
      'v-nome','v-cpf','v-email','v-tel','v-cep','v-rua','v-numero','v-comp','v-bairro','v-cidade','v-estado'
     ].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('n-tipo').value='';
