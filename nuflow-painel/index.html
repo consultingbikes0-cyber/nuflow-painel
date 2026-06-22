@@ -3230,7 +3230,7 @@ window.buscarClientePorNome=function(nome,nomeFieldId,cpfFieldId,emailFieldId,te
   const sug=document.getElementById(suggestionBoxId);
   if(!sug)return;
   if(!nome||nome.length<2){sug.style.display='none';return;}
-  const results=_clientesData.filter(c=>(c.nome||'').toLowerCase().includes(nome.toLowerCase())).slice(0,5);
+  const results=_clientesData.filter(c=>normalizarTexto(c.nome).includes(normalizarTexto(nome))).slice(0,5);
   if(!results.length){sug.style.display='none';return;}
   sug.style.display='block';
   const fieldsJson=JSON.stringify({nomeFieldId,cpfFieldId,emailFieldId,telFieldId,cidadeFieldId,estadoFieldId,suggestionBoxId}).replace(/"/g,'&quot;');
@@ -4604,18 +4604,49 @@ async function loadClientes() {
 // Carrega _clientesData sem tocar na UI da aba Clientes — usado para o autocomplete funcionar
 // em qualquer lugar do painel (cadastro de bike, registro de venda), mesmo sem visitar a aba Clientes.
 async function carregarClientesEmMemoria() {
+  let salvos = [];
   try {
     const {collection:_col, getDocs:_getDocs, orderBy:_orderBy, query:_query}
       = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     const snap = await _getDocs(_query(_col(db,'clientes'), _orderBy('atualizadoEm','desc')));
-    _clientesData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+    salvos = snap.docs.map(d => ({...d.data(), _id: d.id}));
   } catch(e) {
     console.warn('Erro ao carregar clientes:', e);
-    _clientesData = [];
+    salvos = [];
   }
-  if(_clientesData.length === 0 && bikes.length > 0){
-    _clientesData = gerarClientesDesBikes();
-  }
+
+  // Sempre mesclar com os clientes derivados das bikes (compradores/vendedores que
+  // ainda não foram migrados para a coleção 'clientes', ex: cadastrados antes da correção do salvarCliente)
+  const dasBikes = bikes.length > 0 ? gerarClientesDesBikes() : [];
+
+  // Mesclagem: usa CPF, depois e-mail, depois telefone, depois nome normalizado como chave de deduplicação
+  const norm = s => (s||'').toString().trim().toLowerCase();
+  const chaveDe = c => norm(c.cpf) || norm(c.email) || norm(c.tel) || norm(c.nome);
+
+  const mapa = {};
+  // Primeiro os "das bikes" (preenchem a base toda, incluindo históricos antigos)
+  dasBikes.forEach(c => {
+    const k = chaveDe(c);
+    if(!k) return;
+    mapa[k] = c;
+  });
+  // Depois os salvos no Firestore sobrescrevem/mesclam (são a fonte mais confiável e atualizada)
+  salvos.forEach(c => {
+    const k = chaveDe(c);
+    if(!k){ mapa['_id_'+c._id] = c; return; }
+    if(mapa[k]){
+      // Mesclar histórico das duas fontes sem duplicar entradas (por bikeId+tipo)
+      const histBikes = mapa[k].historico||[];
+      const histSalvo = c.historico||[];
+      const vistos = new Set(histSalvo.map(h => h.bikeId+'|'+h.tipo));
+      const extras = histBikes.filter(h => !vistos.has(h.bikeId+'|'+h.tipo));
+      mapa[k] = {...c, historico:[...histSalvo, ...extras]};
+    } else {
+      mapa[k] = c;
+    }
+  });
+
+  _clientesData = Object.values(mapa).sort((a,b)=>(b.atualizadoEm||b.criadoEm||'').localeCompare(a.atualizadoEm||a.criadoEm||''));
 }
 
 function gerarClientesDesBikes(){
@@ -4678,6 +4709,10 @@ function gerarClientesDesBikes(){
   return Object.values(mapa).sort((a,b) => (b.atualizadoEm||'').localeCompare(a.atualizadoEm||''));
 }
 
+function normalizarTexto(s){
+  return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+
 function drawClientes() {
   const root = document.getElementById('clientes-root');
   if (!root) return;
@@ -4688,9 +4723,9 @@ function drawClientes() {
     _clienteDetalhe = null;
   }
   
-  const busca = _clienteBusca.toLowerCase();
+  const busca = normalizarTexto(_clienteBusca);
   const filtered = busca
-    ? _clientesData.filter(c => (c.nome||'').toLowerCase().includes(busca) || (c.cpf||'').includes(busca) || (c.email||'').toLowerCase().includes(busca) || (c.tel||'').includes(busca))
+    ? _clientesData.filter(c => normalizarTexto(c.nome).includes(busca) || (c.cpf||'').includes(busca) || normalizarTexto(c.email).includes(busca) || (c.tel||'').includes(busca))
     : _clientesData;
   
   const compradores = _clientesData.filter(c => (c.historico||[]).some(h => h.tipo === 'comprador')).length;
@@ -4815,9 +4850,9 @@ window.clienteSearch = function(v) {
 function _drawClientesLista(){
   const lista = document.getElementById('clientes-lista');
   if(!lista){ drawClientes(); return; }
-  const busca = _clienteBusca.toLowerCase();
+  const busca = normalizarTexto(_clienteBusca);
   const filtered = busca
-    ? _clientesData.filter(c => (c.nome||'').toLowerCase().includes(busca)||(c.cpf||'').includes(busca)||(c.email||'').toLowerCase().includes(busca)||(c.tel||'').includes(busca))
+    ? _clientesData.filter(c => normalizarTexto(c.nome).includes(busca)||(c.cpf||'').includes(busca)||normalizarTexto(c.email).includes(busca)||(c.tel||'').includes(busca))
     : _clientesData;
   if(!filtered.length){
     lista.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">' + (busca?'Nenhum cliente encontrado':'Nenhum cliente cadastrado ainda.') + '</div></div>';
@@ -4960,11 +4995,17 @@ function capFmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-BR',{day:
 
 async function sbFetch(path, opts) {
   opts = opts || {};
-  var res = await fetch(SB_URL+path, {
-    method: opts.method || 'GET',
-    headers: Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'}, opts.headers||{}),
-    body: opts.body
-  });
+  var res;
+  try{
+    res = await fetch(SB_URL+path, {
+      method: opts.method || 'GET',
+      headers: Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'}, opts.headers||{}),
+      body: opts.body
+    });
+  }catch(e){
+    console.error('[sbFetch] Falha de conexão com Supabase:',e);
+    throw new Error('CONEXAO_SUPABASE_FALHOU');
+  }
   if (res.status === 204 || res.status === 200 && opts.method === 'DELETE') return {};
   try { return await res.json(); } catch(e) { return {}; }
 }
@@ -4972,7 +5013,19 @@ async function sbFetch(path, opts) {
 async function loadCapData() {
   var root = document.getElementById('captacao-root');
   if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-family:DM Mono,monospace">carregando...</div>';
-  var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+  var data;
+  try{
+    data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+  }catch(e){
+    if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--amber)">'+
+      '<div style="font-size:32px;margin-bottom:.5rem">⚠️</div>'+
+      '<div style="font-size:14px;font-weight:600;margin-bottom:.5rem">Não foi possível conectar à Captação</div>'+
+      '<div style="font-size:12px;color:var(--text3);font-family:DM Mono,monospace;max-width:420px;margin:0 auto">O servidor Supabase não respondeu. Verifique se o projeto está ativo no painel do Supabase (pode ter sido pausado por inatividade) ou se a URL de conexão mudou.</div>'+
+      '<button class="btn btn-sm" style="margin-top:1rem" onclick="loadCapData()">🔄 Tentar novamente</button>'+
+      '</div>';
+    capLoaded = false;
+    return;
+  }
   capData = Array.isArray(data) ? data : [];
   window.capData = capData;
   capLoaded = true;
