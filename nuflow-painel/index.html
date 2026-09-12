@@ -1038,6 +1038,13 @@ function renderEstoque(){
           <div class="fg"><label>CPF</label><input type="text" id="eb-vcpf-${b._docId}" value="${b.vendedor?.cpf||''}"></div>
           <div class="fg"><label>E-mail</label><input type="email" id="eb-vemail-${b._docId}" value="${b.vendedor?.email||''}"></div>
           <div class="fg"><label>Telefone</label><input type="text" id="eb-vtel-${b._docId}" value="${b.vendedor?.tel||''}"></div>
+          <div class="fg"><label>CEP</label><input type="text" id="eb-vcep-${b._docId}" value="${b.vendedor?.cep||''}" oninput="maskCEP(this)" onblur="buscaCEPVendedor('${b._docId}')"></div>
+          <div class="fg"><label>Logradouro</label><input type="text" id="eb-vrua-${b._docId}" value="${b.vendedor?.rua||''}"></div>
+          <div class="fg"><label>Número</label><input type="text" id="eb-vnumero-${b._docId}" value="${b.vendedor?.numero||''}"></div>
+          <div class="fg"><label>Complemento</label><input type="text" id="eb-vcomp-${b._docId}" value="${b.vendedor?.comp||''}"></div>
+          <div class="fg"><label>Bairro</label><input type="text" id="eb-vbairro-${b._docId}" value="${b.vendedor?.bairro||''}"></div>
+          <div class="fg"><label>Cidade</label><input type="text" id="eb-vcidade-${b._docId}" value="${b.vendedor?.cidade||''}"></div>
+          <div class="fg"><label>Estado</label><input type="text" id="eb-vestado-${b._docId}" value="${b.vendedor?.estado||''}" maxlength="2"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="salvarEditarBike('${b._docId}')">Salvar alterações</button>
@@ -2547,6 +2554,19 @@ window.toggleSell=function(id){
   }
 };
 
+window.buscaCEPVendedor=async function(id){
+  const cep=(document.getElementById('eb-vcep-'+id)?.value||'').replace(/\D/g,'');
+  if(cep.length!==8)return;
+  try{
+    const r=await fetch('https://viacep.com.br/ws/'+cep+'/json/');
+    const d=await r.json();
+    if(d.erro)return;
+    const s=(fid,val)=>{const el=document.getElementById(fid);if(el&&val)el.value=val;};
+    s('eb-vrua-'+id,d.logradouro);s('eb-vbairro-'+id,d.bairro);
+    s('eb-vcidade-'+id,d.localidade);s('eb-vestado-'+id,d.uf);
+  }catch(e){}
+};
+
 window.buscaCEPVenda=async function(el, id){
   const cep=el.value.replace(/\D/g,'');
   if(cep.length!==8)return;
@@ -3176,7 +3196,7 @@ window.cadastrarEGerarConsignacao=async function(){
   const msgEl=document.getElementById('consig-msg');
   const setMsg=(txt,cor)=>{if(msgEl){msgEl.style.display='inline';msgEl.textContent=txt;msgEl.style.color=cor||'var(--text3)';}};
   setMsg('Cadastrando bike...');
-  const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:g('v-estado').toUpperCase()};
+  const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
   const serie=g('n-serie');
   const obsContratoConsig=g('n-obs-contrato');
   const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:Number(valor),dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString()};
@@ -3246,8 +3266,12 @@ window.salvarEditarBike=async function(id){
     valor:novoValor,precoEst:novoValor,
     vendedor:{
       ...bike.vendedor,
-      nome:g('eb-vnome-'),cpf:g('eb-vcpf-'),
-      email:g('eb-vemail-'),tel:g('eb-vtel-'),
+      nome:g('eb-vnome-'+id),cpf:g('eb-vcpf-'+id),
+      email:g('eb-vemail-'+id),tel:g('eb-vtel-'+id),
+      cep:g('eb-vcep-'+id),rua:g('eb-vrua-'+id),
+      numero:g('eb-vnumero-'+id),comp:g('eb-vcomp-'+id),
+      bairro:g('eb-vbairro-'+id),
+      cidade:g('eb-vcidade-'+id),estado:(g('eb-vestado-'+id)||'').toUpperCase()
     }
   };
 
@@ -3411,20 +3435,8 @@ document.addEventListener('click',e=>{
 
 window.maskCPF=function(el){el.value=el.value.replace(/\D/g,'').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').substring(0,14);};
 window.maskCEP=function(el){el.value=el.value.replace(/\D/g,'').replace(/(\d{5})(\d{3})/,'$1-$2').substring(0,9);};
-window.buscaCEP=async function(el,prefix){
-  const cep=el.value.replace(/\D/g,'');
-  if(cep.length!==8)return;
-  try{
-    const r=await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-    const d=await r.json();
-    if(d.erro)return;
-    const g=id=>document.getElementById(prefix+id);
-    if(g('rua'))g('rua').value=d.logradouro||'';
-    if(g('bairro'))g('bairro').value=d.bairro||'';
-    if(g('cidade'))g('cidade').value=d.localidade||'';
-    if(g('estado'))g('estado').value=d.uf||'';
-  }catch(e){}
-};
+// buscaCEP sem parâmetros — definida abaixo para o formulário de cadastro
+// buscaCEPVenda e buscaCEPVendedor são versões específicas por prefixo
 
 window.cadastrarBike=async function(){
   const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
