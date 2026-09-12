@@ -1582,6 +1582,9 @@ function renderVendidas(){
             ${[
               ['Nome',b.vendedor?.nome],['CPF',b.vendedor?.cpf],
               ['E-mail',b.vendedor?.email],['Telefone',b.vendedor?.tel],
+              ['CEP',b.vendedor?.cep],
+              ['Endereço',[b.vendedor?.rua,b.vendedor?.numero,b.vendedor?.comp].filter(Boolean).join(', ')||null],
+              ['Bairro',b.vendedor?.bairro],
               ['Cidade',b.vendedor?.cidade?(b.vendedor.cidade+(b.vendedor.estado?' / '+b.vendedor.estado:'')):null]
             ].filter(x=>x[1]).map(x=>`
               <div style="margin-bottom:.5rem">
