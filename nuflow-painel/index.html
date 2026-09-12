@@ -285,7 +285,8 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <div class="toolbar">
     <select id="f-tipo" onchange="renderEstoque()"><option value="">Todos os tipos</option><option>Trail</option><option>Enduro</option><option>Downhill</option><option>E-MTB</option><option>XC</option><option>Speed</option><option>Gravel</option><option>Urban</option></select>
     <select id="f-aq" onchange="renderEstoque()"><option value="">Consignado + próprio</option><option value="consignado">Consignado</option><option value="proprio">Compra própria</option></select>
-    <select id="f-age" onchange="renderEstoque()"><option value="">Todos os prazos</option><option value="ok">Até 30 dias</option><option value="slow">+30 dias</option></select>
+    <button id="f-age-btn" onclick="toggleFiltroAge()" style="padding:6px 14px;border-radius:20px;font-size:12px;font-family:'DM Mono',monospace;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--text3);transition:all .15s">+30 dias</button>
+    <input type="hidden" id="f-age" value="">
   </div>
   <div id="lista-estoque"><div class="loading pulse">carregando...</div></div>
 </div>
@@ -1048,6 +1049,18 @@ function renderEstoque(){
     </div>`;
   }).join('');
 }
+window.toggleFiltroAge=function(){
+  const btn=document.getElementById('f-age-btn');
+  const input=document.getElementById('f-age');
+  const ativo=input.value==='slow';
+  input.value=ativo?'':'slow';
+  btn.style.background=ativo?'transparent':'var(--amber-dim,rgba(251,191,36,.15))';
+  btn.style.color=ativo?'var(--text3)':'var(--amber)';
+  btn.style.borderColor=ativo?'var(--border2)':'var(--amber)';
+  btn.textContent=ativo?'+30 dias':'✕ +30 dias';
+  renderEstoque();
+};
+
 window.renderEstoque=renderEstoque;
 
 // ===== VENDIDAS =====
@@ -1441,6 +1454,24 @@ window.setFiltroMesVendidas=function(mes){
   renderVendidas();
 };
 
+window.toggleDetalheVenda=function(id){
+  const el=document.getElementById('detalhe-venda-'+id);
+  const ch=document.getElementById('chevron-'+id);
+  if(!el)return;
+  const aberto=el.style.display==='block';
+  el.style.display=aberto?'none':'block';
+  if(ch)ch.textContent=aberto?'›':'⌄';
+};
+
+window.toggleNFComissao=async function(id,valor){
+  try{
+    await updateDoc(doc(db,'bikes',id),{nfComissaoFeita:valor});
+    const b=bikes.find(x=>x._docId===id);
+    if(b)b.nfComissaoFeita=valor;
+    renderVendidas();
+  }catch(e){console.error(e);alert('Erro: '+e.message);}
+};
+
 function renderVendidas(){
   const todas=bikes.filter(b=>b.vendida);
 
@@ -1486,25 +1517,110 @@ function renderVendidas(){
   el.innerHTML=vv.map(b=>{
     const nota=b.notaFinal??b.notaAuto??null;
     const isProprio=b.aquisicao==='proprio';
+    const com=Number(b.comissaoRecebida||0);
+    const imposto=Math.round(com*0.06*100)/100;
+    const liquido=Math.round((com-imposto)*100)/100;
+    const nfComFeita=!!b.nfComissaoFeita;
     return `<div class="bike-card sold">
-      <div class="bike-top">
-        <div><div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span></div>
-        <div class="bike-sub-info">${[b.tipo,b.tamanho].filter(Boolean).join(' · ')}</div></div>
+      <!-- Topo clicável para expandir -->
+      <div class="bike-top" style="cursor:pointer" onclick="toggleDetalheVenda('${b._docId}')">
+        <div>
+          <div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span></div>
+          <div class="bike-sub-info">${[b.tipo,b.tamanho,b.dataVenda?new Date(b.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):''].filter(Boolean).join(' · ')}</div>
+        </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
           ${nota!==null?`<div class="nota-badge nota-${notaClass(nota)}">${nota}</div>`:''}
           <span class="badge badge-sold">Vendida</span>
-          ${b.temNF==='sim'?'<span class="badge badge-nf">✓ NF</span>':''}
+          ${b.temNF==='sim'?'<span class="badge badge-nf">✓ NF bike</span>':''}
+          ${nfComFeita?'<span class="badge badge-nf">✓ NF comissão</span>':'<span class="badge badge-pending" style="cursor:pointer" onclick="event.stopPropagation();toggleNFComissao(\''+b._docId+'\',true)">NF comissão</span>'}
+          <span style="font-size:16px;color:var(--text3);margin-left:4px" id="chevron-${b._docId}">›</span>
         </div>
       </div>
-      <div class="bike-grid">
-        <div><div class="bike-field-label">Valor venda</div><div class="bike-field-value">${fmtRInt(b.valorVenda||b.valor)}</div></div>
-        <div><div class="bike-field-label">${isProprio?'Lucro':'Comissão'}</div><div class="bike-field-value" style="color:var(--green)">${fmtR2(b.comissaoRecebida||0)}</div></div>
-        <div><div class="bike-field-label">Canal</div><div class="bike-field-value">${b.canalVenda||'—'}</div></div>
-        <div><div class="bike-field-label">Dias p/ vender</div><div class="bike-field-value">${b.diasParaVender!=null?b.diasParaVender+'d':'—'}</div></div>
-        <div><div class="bike-field-label">Comprador</div><div class="bike-field-value">${b.comprador||'—'}</div></div>
-        <div><div class="bike-field-label">Data venda</div><div class="bike-field-value">${b.dataVenda?new Date(b.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div></div>
-        ${b.nfURL?`<div><div class="bike-field-label">Nota fiscal</div><div class="bike-field-value"><a href="${b.nfURL}" target="_blank" style="color:var(--green);text-decoration:none">📄 Baixar</a></div></div>`:''}
+
+      <!-- Métricas rápidas sempre visíveis -->
+      <div style="display:flex;gap:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg3)">
+        <div style="flex:1;padding:.5rem .875rem;border-right:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">Valor venda</div>
+          <div style="font-size:14px;font-weight:600">${fmtRInt(b.valorVenda||b.valor)}</div>
+        </div>
+        <div style="flex:1;padding:.5rem .875rem;border-right:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">${isProprio?'Lucro':'Comissão bruta'}</div>
+          <div style="font-size:14px;font-weight:600;color:var(--green)">${fmtR2(com)}</div>
+        </div>
+        <div style="flex:1;padding:.5rem .875rem;border-right:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">Imposto (6%)</div>
+          <div style="font-size:14px;font-weight:600;color:var(--amber)">${fmtR2(imposto)}</div>
+        </div>
+        <div style="flex:1;padding:.5rem .875rem">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">Líquido</div>
+          <div style="font-size:14px;font-weight:600;color:var(--teal)">${fmtR2(liquido)}</div>
+        </div>
       </div>
+
+      <!-- Painel expansível de detalhes -->
+      <div id="detalhe-venda-${b._docId}" style="display:none">
+        <div style="padding:.875rem 1rem;display:grid;grid-template-columns:1fr 1fr;gap:1rem;border-bottom:1px solid var(--border)">
+
+          <!-- Comprador -->
+          <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:.875rem">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:'DM Mono',monospace;margin-bottom:.75rem">🛒 Comprador</div>
+            ${[
+              ['Nome',b.comprador],['CPF',b.compradorCPF],['RG',b.compradorRG],
+              ['E-mail',b.compradorEmail],['Telefone',b.compradorTel],
+              ['Endereço',b.compradorEnd],['Cidade',b.compradorCidade?(b.compradorCidade+(b.compradorEstado?' / '+b.compradorEstado:'')):null],
+              ['CEP',b.compradorCEP]
+            ].filter(x=>x[1]).map(x=>`
+              <div style="margin-bottom:.5rem">
+                <div style="font-size:10px;color:var(--text3)">${x[0]}</div>
+                <div style="font-size:13px;font-weight:500">${x[1]}</div>
+              </div>`).join('')||'<div style="font-size:12px;color:var(--text3)">Sem dados cadastrados</div>'}
+          </div>
+
+          <!-- Vendedor -->
+          <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:.875rem">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:'DM Mono',monospace;margin-bottom:.75rem">🏷️ Vendedor</div>
+            ${[
+              ['Nome',b.vendedor?.nome],['CPF',b.vendedor?.cpf],
+              ['E-mail',b.vendedor?.email],['Telefone',b.vendedor?.tel],
+              ['Cidade',b.vendedor?.cidade?(b.vendedor.cidade+(b.vendedor.estado?' / '+b.vendedor.estado:'')):null]
+            ].filter(x=>x[1]).map(x=>`
+              <div style="margin-bottom:.5rem">
+                <div style="font-size:10px;color:var(--text3)">${x[0]}</div>
+                <div style="font-size:13px;font-weight:500">${x[1]}</div>
+              </div>`).join('')||'<div style="font-size:12px;color:var(--text3)">Sem dados cadastrados</div>'}
+          </div>
+        </div>
+
+        <!-- Dados da venda + NF comissão -->
+        <div style="padding:.875rem 1rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">Canal</div>
+            <div style="font-size:13px;margin-top:2px">${b.canalVenda||'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">Forma pgto</div>
+            <div style="font-size:13px;margin-top:2px">${b.formaPagamento||'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">Dias p/ vender</div>
+            <div style="font-size:13px;margin-top:2px">${b.diasParaVender!=null?b.diasParaVender+'d':'—'}</div>
+          </div>
+        </div>
+
+        <!-- Bloco NF comissão -->
+        <div style="padding:.875rem 1rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:${nfComFeita?'var(--green-dim)':'var(--bg3)'}">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Nota fiscal de comissão</div>
+            <div style="font-size:12px;color:var(--text2)">Comissão: <strong>${fmtR2(com)}</strong> · Imposto 6%: <strong style="color:var(--amber)">${fmtR2(imposto)}</strong> · Líquido: <strong style="color:var(--green)">${fmtR2(liquido)}</strong></div>
+          </div>
+          <button onclick="toggleNFComissao('${b._docId}',${!nfComFeita})"
+            style="padding:6px 14px;border-radius:20px;font-size:12px;font-family:'DM Mono',monospace;cursor:pointer;border:1px solid ${nfComFeita?'var(--green)':'var(--border2)'};background:${nfComFeita?'var(--green-dim)':'transparent'};color:${nfComFeita?'var(--green)':'var(--text3)'};white-space:nowrap">
+            ${nfComFeita?'✓ NF emitida':'◯ Marcar NF emitida'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Ações -->
       <div class="bike-actions" id="av-${b._docId}">
         ${gerarAcoesVendida(b)}
       </div>
@@ -2312,12 +2428,23 @@ window.salvarBikeCheck=async function(id){
     if(!st){alert('Storage não disponível. Ative o plano Blaze no Firebase para enviar fotos.');return;}
     setProgresso(0,totalArquivos,'Enviando fotos...');
     const uploadFotos=fotosComprimidas.map(async([key,blob])=>{
-      const r=await sRef(st,`fotos/${id}/${key}_${Date.now()}`);
-      await uploadBytes(r,blob);
-      const url=await getDownloadURL(r);
-      uploadados++;
-      setProgresso(uploadados,totalArquivos,'Enviando fotos...');
-      return[key,url];
+      try{
+        const r=await sRef(st,`fotos/${id}/${key}_${Date.now()}`);
+        await uploadBytes(r,blob);
+        const url=await getDownloadURL(r);
+        uploadados++;
+        setProgresso(uploadados,totalArquivos,'Enviando fotos...');
+        return[key,url];
+      }catch(e){
+        console.error(`[upload] Erro ao enviar foto ${key}:`,e.message||e);
+        if(e.code==='storage/unauthorized'){
+          throw new Error('Sem permissão para enviar fotos. Verifique as regras do Firebase Storage.');
+        }
+        if(e.message&&e.message.includes('404')){
+          throw new Error('Firebase Storage não encontrado (404). Verifique se o bucket está ativo no console do Firebase.');
+        }
+        throw e;
+      }
     });
 
     // 3. Upload NF em paralelo
@@ -4976,22 +5103,14 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 <script>
 // ===== CAPTACAO =====
+// ===== CAPTAÇÃO — Supabase =====
 const SB_URL = 'https://zwoxvbzspdjssuqltgox.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b3h2YnpzcGRqc3N1cWx0Z294Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDgxNTAsImV4cCI6MjA5MjM4NDE1MH0.IxXj3NhabrA7ln5c_So8u9DXWJ_PlKRgBUav0g4NDNQ';
-
-const CAP_LABELS = {novo:'Novo',em_analise:'Em análise',aprovado:'Aprovado',reprovado:'Reprovado',vendido:'Vendido'};
-const CAP_COLORS = {novo:'var(--amber)',em_analise:'var(--blue)',aprovado:'var(--green)',reprovado:'var(--red)',vendido:'var(--purple)'};
-
 let capData = [];
 let capFilter = 'todos';
 let capDetalhe = null;
 let capLoaded = false;
-let _capDescAtual = '';
-
-function capCalcCom(p) { var v=Number(p||0); return Math.min(Math.max(v*0.10,800),5000); }
-function capDias(d) { return d ? Math.floor((new Date()-new Date(d))/86400000) : 0; }
-function capFmtR(v) { return 'R$ '+Math.round(Number(v)).toLocaleString('pt-BR'); }
-function capFmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'; }
+let _capUltimoCount = null;
 
 async function sbFetch(path, opts) {
   opts = opts || {};
@@ -5017,14 +5136,15 @@ async function loadCapData() {
   try{
     data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
   }catch(e){
+    if(window._capPollInterval){clearInterval(window._capPollInterval);window._capPollInterval=null;}
     if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--amber)">'+
       '<div style="font-size:32px;margin-bottom:.5rem">⚠️</div>'+
       '<div style="font-size:14px;font-weight:600;margin-bottom:.5rem">Não foi possível conectar à Captação</div>'+
-      '<div style="font-size:12px;color:var(--text3);font-family:DM Mono,monospace;max-width:420px;margin:0 auto">O servidor Supabase não respondeu. Verifique se o projeto está ativo no painel do Supabase (pode ter sido pausado por inatividade) ou se a URL de conexão mudou.</div>'+
+      '<div style="font-size:12px;color:var(--text3);font-family:DM Mono,monospace;max-width:420px;margin:0 auto">O servidor Supabase não respondeu. Verifique se o projeto está ativo no painel do Supabase.</div>'+
       '<button class="btn btn-sm" style="margin-top:1rem" onclick="loadCapData()">🔄 Tentar novamente</button>'+
       '</div>';
     capLoaded = false;
-    return;
+    return false;
   }
   capData = Array.isArray(data) ? data : [];
   window.capData = capData;
@@ -5033,55 +5153,11 @@ async function loadCapData() {
   var el = document.getElementById('count-captacao');
   if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
   drawCap();
+  return true;
 }
 
 async function capUpdateStatus(id, status) {
   await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'PATCH', body:JSON.stringify({status:status})});
-
-  // Quando marcada como vendida, criar bike no estoque do Firebase
-  if(status === 'vendido'){
-    const b = capData.find(function(x){return x.id===id;});
-    if(b){
-      try{
-        // Verificar se já foi migrada
-        const jaExiste = bikes.find(function(bk){return bk.captacaoId===String(id);});
-        if(!jaExiste){
-          const novaBike = {
-            marca: b.marca||'',
-            modelo: b.modelo||'',
-            versao: b.versao||'',
-            tipo: b.tipo||'',
-            tamanho: b.tamanho||'',
-            ano: b.ano?String(b.ano):'',
-            valor: Number(b.preco_pedido||0),
-            precoEst: Number(b.preco_pedido||0),
-            serie: '',cor:'',
-            aquisicao: 'consignado',
-            dataEntrada: new Date().toISOString().split('T')[0],
-            vendedor: {
-              nome: b.nome||'',
-              tel: (b.whatsapp||'').replace(/\D/g,'').replace(/^(\d{2})(\d{5})(\d{4})$/,'($1) $2-$3'),
-              email:'',cpf:'',
-              cidade: b.cidade||'',estado: b.estado||''
-            },
-            captacaoId: String(id),
-            vendida: false,
-            criadoEm: new Date().toISOString()
-          };
-          const {addDoc:_add, collection:_col} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-          await _add(_col(db,'bikes'), novaBike);
-          await loadData();
-          alert('✅ Bike migrada para o Estoque!\nComplete as informações na aba Estoque antes de registrar a venda.');
-        } else {
-          alert('Esta bike já está no Estoque (série: '+(jaExiste.serie||'sem série')+').');
-        }
-      }catch(e){
-        console.error('Erro ao migrar bike do Captação:', e);
-        alert('Erro ao migrar bike: '+e.message);
-      }
-    }
-  }
-
   var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
   capData = Array.isArray(data) ? data : [];
   window.capData = capData;
@@ -5093,387 +5169,22 @@ async function capUpdateStatus(id, status) {
 }
 
 async function capDelete(id) {
-  if (!confirm('Excluir este envio? Essa ação não pode ser desfeita.')) return;
+  if (!confirm('Excluir esta submissão?')) return;
   await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'DELETE'});
   capDetalhe = null;
   await loadCapData();
 }
 
-function drawCap() {
-  var root = document.getElementById('captacao-root');
-  if (!root) return;
-  if (capDetalhe) {
-    var b = capData.find(function(x){return x.id===capDetalhe;});
-    if (b) { root.innerHTML = drawCapDetalhe(b); return; }
-    capDetalhe = null;
-  }
-  if (capSubTab === 'analise') { drawCapAnalise(root); return; }
-  drawCapLista(root);
+window.loadCapData = loadCapData;
+
+function capRequestNotifPermission(){
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
 }
-
-function el(tag, attrs, inner) {
-  var parts = '<'+tag;
-  if (attrs) parts += ' '+attrs;
-  parts += '>';
-  if (inner !== undefined) parts += inner;
-  parts += '</'+tag+'>';
-  return parts;
-}
-
-function drawCapLista(root) {
-  var aprovadas = capData.filter(function(b){return b.status==='aprovado';});
-  _capParadas30List = aprovadas.filter(function(b){return capDias(b.criado_em)>30;});
-  var filtered = capFilter==='todos' ? capData
-    : capFilter==='paradas30' ? _capParadas30List
-    : capData.filter(function(b){return b.status===capFilter;});
-  var totalValor = aprovadas.reduce(function(s,b){return s+Number(b.preco_pedido||0);},0);
-  var totalCom = aprovadas.reduce(function(s,b){return s+capCalcCom(b.preco_pedido);},0);
-  var aguardando = capData.filter(function(b){return b.status==='novo'||b.status==='em_analise';}).length;
-  var paradas = aprovadas.filter(function(b){return capDias(b.criado_em)>30;}).length;
-  var counts = {};
-  ['novo','em_analise','aprovado','reprovado','vendido'].forEach(function(s){counts[s]=capData.filter(function(b){return b.status===s;}).length;});
-
-  var h = '';
-
-  // Header
-  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
-  h += '<div><div style="font-size:20px;font-weight:600">Captação remota</div>';
-  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">Bikes enviadas pelo formulário online</div></div>';
-  h += '<button class="btn btn-primary btn-sm" onclick="loadCapData()">↻ Atualizar</button></div>';
-  h += '<div style="display:flex;gap:8px;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0">';
-  var tabLista = capSubTab==='lista' ? 'border-bottom:2px solid var(--green);color:var(--text)' : 'border-bottom:2px solid transparent;color:var(--text3)';
-  var tabAnalise = capSubTab==='analise' ? 'border-bottom:2px solid var(--green);color:var(--text)' : 'border-bottom:2px solid transparent;color:var(--text3)';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabLista + '" onclick="capSetSubTab(0)">&#128203; Submiss&#245;es</button>';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabAnalise + '" onclick="capSetSubTab(1)">&#128202; An&#225;lise</button>';
-  h += '</div>';
-
-  // Metrics
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:2rem">';
-  var mets = [
-    {l:'ANUNCIADAS', v:aprovadas.length, s:'bikes ativas', c:'var(--green)'},
-    {l:'VALOR TOTAL', v:capFmtR(totalValor), s:'preços pedidos', c:'var(--blue)'},
-    {l:'COMISSÃO POT.', v:capFmtR(totalCom), s:'10% · min R$800 · max R$5k', c:'var(--teal)'},
-    {l:'AGUARD. ANÁLISE', v:aguardando, s:aguardando>0?'atenção':'em dia', c:'var(--amber)'},
-    {l:'+30 DIAS', v:paradas, s:paradas>0?'atenção':'ok', c:paradas>0?'var(--amber)':'var(--green)', f:'paradas30'}
-  ];
-  mets.forEach(function(m){
-    var cursor = m.f ? 'cursor:pointer;' : '';
-    var onclick = m.f ? ' onclick="capSetFilter(this)" data-filter="' + m.f + '"' : '';
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.25rem 1rem;position:relative;overflow:hidden;'+cursor+'"'+onclick+'>';
-    h += '<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+m.c+'"></div>';
-    h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;font-family:DM Mono,monospace">'+m.l+'</div>';
-    h += '<div style="font-size:22px;font-weight:600;color:var(--text);line-height:1">'+m.v+'</div>';
-    h += '<div style="font-size:11px;color:var(--text3);margin-top:4px">'+m.s+'</div></div>';
-  });
-  h += '</div>';
-
-  // Status cards
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:1.25rem">';
-  [['novo','Novos'],['em_analise','Em análise'],['aprovado','Aprovados'],['reprovado','Reprovados'],['vendido','Vendidos']].forEach(function(item){
-    var s=item[0], l=item[1], cor=CAP_COLORS[s], active=capFilter===s?'border-color:'+cor+';':'';
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);'+active+'border-radius:var(--radius);padding:.75rem;cursor:pointer;text-align:center" onclick="capFilter=\x27'+s+'\x27;drawCap()">';
-    h += '<div style="font-size:18px;font-weight:600;color:'+cor+'">'+counts[s]+'</div>';
-    h += '<div style="font-size:10px;color:var(--text3);margin-top:2px;font-family:DM Mono,monospace">'+l+'</div></div>';
-  });
-  h += '</div>';
-
-  // Filter buttons
-  h += '<div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">';
-  ['todos','novo','em_analise','aprovado','reprovado','vendido'].forEach(function(s){
-    var active=capFilter===s?'background:var(--bg4);color:var(--text);':'';
-    var lbl=s==='todos'?'Todos ('+capData.length+')':s==='paradas30'?'+30 dias ('+_capParadas30List.length+')':CAP_LABELS[s];
-    h += '<button class="btn btn-sm" style="'+active+'" onclick="capFilter=\x27'+s+'\x27;drawCap()">'+lbl+'</button>';
-  });
-  h += '</div>';
-
-  // List
-  if (filtered.length===0) {
-    h += '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Nenhuma bike encontrada</div></div>';
-  } else {
-    filtered.forEach(function(b){
-      var cor=CAP_COLORS[b.status]||'var(--border)';
-      var preco=b.preco_pedido?capFmtR(b.preco_pedido):'—';
-      var com=b.preco_pedido?capFmtR(capCalcCom(b.preco_pedido)):'—';
-      var dias=capDias(b.criado_em);
-      var diasLbl=dias===0?'hoje':dias+'d atrás';
-      var diasCor=dias>30?'var(--amber)':'var(--text3)';
-      h += '<div class="bike-card" style="cursor:pointer;border-left:3px solid '+cor+'" onclick="capDetalhe=\x27'+b.id+'\x27;drawCap()">';
-      h += '<div class="bike-top"><div>';
-      h += '<div class="bike-name">'+(b.marca||'')+' '+(b.modelo||'')+' '+(b.ano||'')+'</div>';
-      h += '<div class="bike-sub-info">'+(b.tipo||'')+' · '+(b.tamanho||'')+' · '+(b.cidade||'')+'-'+(b.estado||'')+'</div>';
-      h += '</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">';
-      h += '<span class="badge" style="background:'+cor+'20;color:'+cor+'">'+(CAP_LABELS[b.status]||b.status)+'</span>';
-      h += '<span style="font-size:11px;color:'+diasCor+';font-family:DM Mono,monospace">'+diasLbl+'</span>';
-      h += '</div></div>';
-      h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:4px">';
-      h += '<div style="font-size:13px;color:var(--text2)">👤 '+(b.nome||'—')+' · 📱 '+(b.whatsapp||'—')+'</div>';
-      h += '<div style="display:flex;gap:12px;align-items:center">';
-      h += '<div style="text-align:right"><div style="font-size:10px;color:var(--text3)">comissão</div><div style="font-size:12px;color:var(--teal);font-weight:600">'+com+'</div></div>';
-      h += '<div style="font-size:15px;font-weight:600;color:var(--green)">'+preco+'</div>';
-      h += '</div></div>';
-      if (b.status==='vendido') {
-        h += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">';
-        h += '<button class="btn btn-sm btn-teal" onclick="event.stopPropagation();capMigrarEstoque(\x27'+b.id+'\x27)">📦 Migrar para Estoque</button>';
-        h += '<span style="font-size:11px;color:var(--text3);font-family:DM Mono,monospace">Cria registro no Estoque + Vendidas</span>';
-        h += '</div>';
-      }
-      h += '</div>';
-    });
-  }
-
-  root.innerHTML = h;
-}
-
-function drawCapDetalhe(b) {
-  var cor = CAP_COLORS[b.status]||'var(--text3)';
-  var preco = b.preco_pedido ? capFmtR(b.preco_pedido) : '—';
-  var com = b.preco_pedido ? capFmtR(capCalcCom(b.preco_pedido)) : '—';
-  var dias = capDias(b.criado_em);
-  var wpp = (b.whatsapp||'').replace(/\D/g,'');
-  var wppNum = wpp.startsWith('55') ? wpp : '55'+wpp;
-  var nome1 = (b.nome||'').split(' ')[0];
-  var bid = b.id;
-
-  _capDescAtual = b.descricao_gerada || '';
-
-  var h = '';
-  h += '<div style="margin-bottom:1.25rem"><button class="btn btn-sm" onclick="capDetalhe=null;drawCap()">← Voltar</button></div>';
-
-  // Title + status
-  h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:1.5rem">';
-  h += '<div><div style="font-size:22px;font-weight:600">'+(b.marca||'')+' '+(b.modelo||'')+' '+(b.ano||'')+'</div>';
-  h += '<div style="font-size:13px;color:var(--text3);margin-top:4px;font-family:DM Mono,monospace">Enviado '+capFmtDate(b.criado_em)+' · '+dias+' dias atrás</div></div>';
-  h += '<span class="badge" style="background:'+cor+'20;color:'+cor+';font-size:13px;padding:6px 14px">'+(CAP_LABELS[b.status]||b.status)+'</span></div>';
-
-  // Vendedor + bike
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem">';
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Vendedor</div>';
-  h += '<div style="display:flex;flex-direction:column;gap:8px">';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Nome</div><div style="font-weight:500">'+(b.nome||'—')+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">WhatsApp</div><div style="font-weight:500">'+(b.whatsapp||'—')+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Cidade</div><div style="font-weight:500">'+(b.cidade||'—')+' - '+(b.estado||'—')+'</div></div>';
-  h += '</div></div>';
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Bike</div>';
-  h += '<div style="display:flex;flex-direction:column;gap:8px">';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Tipo / Tam.</div><div style="font-weight:500">'+(b.tipo||'—')+' · '+(b.tamanho||'—')+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Preço pedido</div><div style="font-size:18px;font-weight:600;color:var(--green)">'+preco+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Comissão estimada</div><div style="font-size:15px;font-weight:600;color:var(--teal)">'+com+'</div></div>';
-  h += '</div></div></div>';
-
-  // Componentes
-  var campos = [['Suspensão',b.suspensao],['Amortecedor',b.shock],['Freios',b.freios],['Transmissão',b.relacao],['Rodas',b.rodas],['Extras',b.outros_componentes],['Observações',b.observacoes]].filter(function(x){return !!x[1];});
-  if (campos.length>0) {
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
-    h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Componentes</div>';
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">';
-    campos.forEach(function(c){
-      h += '<div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:DM Mono,monospace;margin-bottom:3px">'+c[0]+'</div><div style="font-size:13px">'+c[1]+'</div></div>';
-    });
-    h += '</div></div>';
-  }
-
-  // Descrição
-  if (b.descricao_gerada) {
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">';
-    h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace">Descrição gerada</div>';
-    h += '<button class="btn btn-sm btn-teal" onclick="capCopyDesc(this)">📋 Copiar HTML</button>';
-    h += '</div>';
-    h += '<div style="background:white;color:#111;padding:1.25rem;border-radius:8px;font-family:sans-serif;line-height:1.6">'+b.descricao_gerada+'</div>';
-    h += '</div>';
-  }
-
-  // Ações
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem;align-items:center">';
-  if (b.status==='novo') h += '<button class="btn btn-sm btn-blue" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27em_analise\x27)">🔍 Em análise</button>';
-  if (b.status==='novo'||b.status==='em_analise') h += '<button class="btn btn-sm" style="color:var(--green);border-color:var(--green-dim)" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27aprovado\x27)">✅ Aprovar</button>';
-  if (b.status==='novo'||b.status==='em_analise'||b.status==='aprovado') h += '<button class="btn btn-sm btn-danger" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27reprovado\x27)">❌ Reprovar</button>';
-  if (b.status==='aprovado') h += '<button class="btn btn-sm" style="color:var(--purple);border-color:var(--purple-dim)" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27vendido\x27)">💰 Vendida</button>';
-  if (b.status==='vendido') h += '<button class="btn btn-sm btn-teal" onclick="capMigrarEstoque(\x27'+bid+'\x27)">📦 Migrar para Estoque</button>';
-  if (wppNum) {
-    var msgOk = encodeURIComponent('Olá '+nome1+'! Sou da Nuflow Bikes. Analisamos sua '+(b.marca||'')+' '+(b.modelo||'')+' e temos interesse! Podemos conversar?');
-    var msgNao = encodeURIComponent('Olá '+nome1+'! Sou da Nuflow Bikes. Analisamos sua '+(b.marca||'')+' '+(b.modelo||'')+' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
-    var diasStr = dias > 0 ? dias + ' dias' : 'alguns dias';
-    var msgCobrar = encodeURIComponent('Olá ' + nome1 + '! Tudo bem? Sua ' + (b.marca||'') + ' ' + (b.modelo||'') + ' está anunciada há ' + diasStr + ' e ainda não vendeu. Gostaria de reduzir o valor para acelerar a venda? Me fala o que acha!');
-    h += '<a href="https://wa.me/'+wppNum+'?text='+msgOk+'" target="_blank" class="btn btn-sm btn-teal" style="text-decoration:none">💬 Contato</a>';
-    if (b.status==='reprovado') h += '<a href="https://wa.me/'+wppNum+'?text='+msgNao+'" target="_blank" class="btn btn-sm" style="text-decoration:none">📩 Resp. negativa</a>';
-    if (b.status === 'aprovado' && dias >= 30) h += '<a href="https://wa.me/' + wppNum + '?text=' + msgCobrar + '" target="_blank" class="btn btn-sm btn-amber" style="text-decoration:none">⏰ Cobrar vendedor (+30d)</a>';
-  }
-  h += '<button class="btn btn-sm btn-danger" style="margin-left:auto" onclick="capDelete(\x27'+bid+'\x27)">🗑 Excluir</button>';
-  h += '</div>';
-
-  return h;
-}
-
-var capSubTab = 'lista';
-var _capParadas30List = [];
-
-function drawCapAnalise(root) {
-  var total = capData.length;
-  var porStatus = {};
-  ['novo','em_analise','aprovado','reprovado','vendido'].forEach(function(s){
-    porStatus[s] = capData.filter(function(b){return b.status===s;}).length;
-  });
-  var aprovadas = capData.filter(function(b){return b.status==='aprovado';});
-  var vendidas = capData.filter(function(b){return b.status==='vendido';});
-  var taxaAprov = total > 0 ? Math.round((aprovadas.length/total)*100) : 0;
-  var taxaVenda = aprovadas.length > 0 ? Math.round((vendidas.length/(aprovadas.length+vendidas.length))*100) : 0;
-
-  // Por estado
-  var porEstado = {};
-  capData.forEach(function(b){ var e=b.estado||'N/A'; porEstado[e]=(porEstado[e]||0)+1; });
-  var topEstados = Object.entries(porEstado).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
-
-  // Por marca
-  var porMarca = {};
-  capData.forEach(function(b){ var m=b.marca||'N/A'; porMarca[m]=(porMarca[m]||0)+1; });
-  var topMarcas = Object.entries(porMarca).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
-
-  // Ticket médio
-  var comPreco = capData.filter(function(b){return b.preco_pedido;});
-  var ticketMedio = comPreco.length ? Math.round(comPreco.reduce(function(s,b){return s+Number(b.preco_pedido);},0)/comPreco.length) : 0;
-
-  // Por tipo
-  var porTipo = {};
-  capData.forEach(function(b){ var t=b.tipo||'N/A'; porTipo[t]=(porTipo[t]||0)+1; });
-  var topTipos = Object.entries(porTipo).sort(function(a,b){return b[1]-a[1];});
-
-  // Comissão acumulada do mês atual (bikes vendidas)
-  var hoje = new Date();
-  var mesAtual = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
-  var vendidasMes = vendidas.filter(function(b){
-    if (!b.criado_em) return false;
-    var bMes = b.criado_em.substring(0,7);
-    return bMes === mesAtual;
-  });
-  var comissaoMes = vendidasMes.reduce(function(s,b){return s+capCalcCom(b.preco_pedido);},0);
-  var comissaoTotal = vendidas.reduce(function(s,b){return s+capCalcCom(b.preco_pedido);},0);
-
-  // Tempo médio de venda (aprovado → vendido)
-  // Usamos dias desde criado_em como aproximação
-  var comDias = vendidas.filter(function(b){return b.criado_em;});
-  var tempoMedio = comDias.length ? Math.round(comDias.reduce(function(s,b){return s+capDias(b.criado_em);},0)/comDias.length) : 0;
-
-
-  var h = '';
-
-  // Sub-tabs header
-  var tabLista2 = 'border-bottom:2px solid transparent;color:var(--text3)';
-  var tabAnalise2 = 'border-bottom:2px solid var(--green);color:var(--text)';
-  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
-  h += '<div><div style="font-size:20px;font-weight:600">Captação remota</div>';
-  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">Bikes enviadas pelo formulário online</div></div>';
-  h += '<button class="btn btn-primary btn-sm" onclick="loadCapData()">↻ Atualizar</button></div>';
-  h += '<div style="display:flex;gap:8px;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0">';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabLista2 + '" onclick="capSetSubTab(0)">&#128203; Submiss&#245;es</button>';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabAnalise2 + '" onclick="capSetSubTab(1)">&#128202; An&#225;lise</button>';
-  h += '</div>';
-
-
-  // KPIs
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:2rem">';
-  var kpis = [
-    {l:'TOTAL RECEBIDAS', v:total, c:'var(--blue)'},
-    {l:'APROVADAS', v:aprovadas.length, c:'var(--green)'},
-    {l:'TAXA APROVAÇÃO', v:taxaAprov+'%', c:'var(--teal)'},
-    {l:'VENDIDAS', v:vendidas.length, c:'var(--purple)'},
-    {l:'TICKET MÉDIO', v:capFmtR(ticketMedio), c:'var(--amber)'},
-    {l:'COMISSÃO NO MÊS', v:capFmtR(comissaoMes), s:'mês atual', c:'var(--teal)'},
-    {l:'COMISSÃO TOTAL', v:capFmtR(comissaoTotal), s:'acumulado', c:'var(--green)'},
-    {l:'TEMPO MÉDIO VENDA', v:tempoMedio ? tempoMedio+'d' : '—', s:'dias até vender', c:'var(--purple)'}
-  ];
-  kpis.forEach(function(k){
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;position:relative;overflow:hidden">';
-    h += '<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+k.c+'"></div>';
-    h += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:8px">'+k.l+'</div>';
-    h += '<div style="font-size:22px;font-weight:600;color:var(--text)">'+k.v+'</div></div>';
-  });
-  h += '</div>';
-
-  // Funil
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.5rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Funil de captação</div>';
-  var funil = [
-    ['Recebidas', total, 'var(--text2)'],
-    ['Em análise', porStatus.em_analise, 'var(--blue)'],
-    ['Aprovadas', porStatus.aprovado, 'var(--green)'],
-    ['Vendidas', porStatus.vendido, 'var(--purple)'],
-    ['Reprovadas', porStatus.reprovado, 'var(--red)']
-  ];
-  funil.forEach(function(f){
-    var pct = total > 0 ? Math.round((f[1]/total)*100) : 0;
-    h += '<div style="margin-bottom:10px">';
-    h += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">';
-    h += '<span style="color:var(--text2)">'+f[0]+'</span>';
-    h += '<span style="font-family:DM Mono,monospace;color:'+f[2]+'">'+f[1]+' ('+pct+'%)</span></div>';
-    h += '<div style="background:var(--bg3);border-radius:4px;height:6px;overflow:hidden">';
-    h += '<div style="height:100%;border-radius:4px;background:'+f[2]+';width:'+pct+'%;transition:width .4s"></div>';
-    h += '</div></div>';
-  });
-  h += '</div>';
-
-  // Por estado + por marca
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">';
-
-  // Estados
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Top estados</div>';
-  topEstados.forEach(function(e){
-    var pct = total > 0 ? Math.round((e[1]/total)*100) : 0;
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    h += '<span style="font-size:13px;color:var(--text2)">'+e[0]+'</span>';
-    h += '<div style="display:flex;align-items:center;gap:8px">';
-    h += '<div style="width:60px;background:var(--bg3);border-radius:4px;height:4px"><div style="height:100%;border-radius:4px;background:var(--blue);width:'+pct+'%"></div></div>';
-    h += '<span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text3);min-width:20px;text-align:right">'+e[1]+'</span>';
-    h += '</div></div>';
-  });
-  h += '</div>';
-
-  // Marcas
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Top marcas</div>';
-  topMarcas.forEach(function(m){
-    var pct = total > 0 ? Math.round((m[1]/total)*100) : 0;
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    h += '<span style="font-size:13px;color:var(--text2)">'+m[0]+'</span>';
-    h += '<div style="display:flex;align-items:center;gap:8px">';
-    h += '<div style="width:60px;background:var(--bg3);border-radius:4px;height:4px"><div style="height:100%;border-radius:4px;background:var(--green);width:'+pct+'%"></div></div>';
-    h += '<span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text3);min-width:20px;text-align:right">'+m[1]+'</span>';
-    h += '</div></div>';
-  });
-  h += '</div>';
-  h += '</div>';
-
-  // Por tipo
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.5rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Por tipo de bike</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-  topTipos.forEach(function(t){
-    h += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:12px">';
-    h += '<span style="color:var(--text2)">'+t[0]+'</span> <span style="font-family:DM Mono,monospace;color:var(--text3)">'+t[1]+'</span>';
-    h += '</div>';
-  });
-  h += '</div></div>';
-
-  root.innerHTML = h;
-}
-
-// Push notifications
-function capRequestNotifPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
+function capSendNotif(titulo,corpo){
+  if('Notification' in window && Notification.permission==='granted'){
+    new Notification(titulo,{body:corpo,icon:'/favicon.ico'});
   }
 }
-
-function capSendNotif(titulo, corpo) {
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(titulo, { body: corpo, icon: 'https://controle-bikes-nuflow.netlify.app/favicon.ico' });
-  }
-}
-
-var _capUltimoCount = null;
 
 async function capChecarNovas() {
   try {
@@ -5490,25 +5201,31 @@ async function capChecarNovas() {
   } catch(e) {}
 }
 
-window.capSetFilter = function(el) {
-  capFilter = el.getAttribute('data-filter') || 'todos';
-  drawCap();
-};
-
-window.capSetSubTab = function(idx) {
-  capSubTab = idx === 0 ? 'lista' : 'analise';
-  drawCap();
-};
-
-window.renderCaptacao = function() {
+window.renderCaptacao=function(){
   capRequestNotifPermission();
-  if (!capLoaded) { loadCapData(); } else { drawCap(); }
-  // Poll every 60s for new bikes
-  if (!window._capPollInterval) {
-    window._capPollInterval = setInterval(capChecarNovas, 60000);
+  if(!capLoaded){
+    loadCapData().then(function(ok){
+      if(ok&&!window._capPollInterval){
+        window._capPollInterval=setInterval(capChecarNovas,60000);
+      }
+    });
+  }else{
+    drawCap();
+    if(!window._capPollInterval){
+      window._capPollInterval=setInterval(capChecarNovas,60000);
+    }
   }
 };
-window.loadCapData = loadCapData;
+window.capUpdateStatus=capUpdateStatus;
+window.capDelete=capDelete;
+window.capCopyDesc=function(btn){
+  if(_capDescAtual){
+    navigator.clipboard.writeText(_capDescAtual).then(function(){
+      btn.textContent='✓ Copiado!';
+      setTimeout(function(){btn.textContent='📋 Copiar HTML';},2000);
+    });
+  }
+};
 window.capUpdateStatus = capUpdateStatus;
 
 // capMigrarEstoque movida para o módulo principal
