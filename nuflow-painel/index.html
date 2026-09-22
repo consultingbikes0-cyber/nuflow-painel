@@ -5192,6 +5192,60 @@ async function capDelete(id) {
 
 window.loadCapData = loadCapData;
 
+const CAP_COLORS = {novo:'var(--amber)',em_analise:'var(--blue)',aprovado:'var(--green)',reprovado:'var(--red)',vendido:'var(--purple)'};
+
+let capData = [];
+let capFilter = 'todos';
+let capDetalhe = null;
+let capLoaded = false;
+let _capDescAtual = '';
+
+function capCalcCom(p) { var v=Number(p||0); return Math.min(Math.max(v*0.10,800),5000); }
+function capDias(d) { return d ? Math.floor((new Date()-new Date(d))/86400000) : 0; }
+function capFmtR(v) { return 'R$ '+Math.round(Number(v)).toLocaleString('pt-BR'); }
+function capFmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'; }
+
+async function sbFetch(path, opts) {
+  opts = opts || {};
+  var res = await fetch(SB_URL+path, {
+    method: opts.method || 'GET',
+    headers: Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'}, opts.headers||{}),
+    body: opts.body
+  });
+  if (res.status === 204 || res.status === 200 && opts.method === 'DELETE') return {};
+  try { return await res.json(); } catch(e) { return {}; }
+}
+
+async function loadCapData() {
+  var root = document.getElementById('captacao-root');
+  if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-family:DM Mono,monospace">carregando...</div>';
+  var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+  capData = Array.isArray(data) ? data : [];
+  capLoaded = true;
+  var novos = capData.filter(function(b){return b.status==='novo';}).length;
+  var el = document.getElementById('count-captacao');
+  if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
+  drawCap();
+}
+
+async function capUpdateStatus(id, status) {
+  await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'PATCH', body:JSON.stringify({status:status})});
+  var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+  capData = Array.isArray(data) ? data : [];
+  var novos = capData.filter(function(b){return b.status==='novo';}).length;
+  var el = document.getElementById('count-captacao');
+  if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
+  capDetalhe = id;
+  drawCap();
+}
+
+async function capDelete(id) {
+  if (!confirm('Excluir este envio? Essa ação não pode ser desfeita.')) return;
+  await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'DELETE'});
+  capDetalhe = null;
+  await loadCapData();
+}
+
 function capDias(dataStr){
   if(!dataStr)return 0;
   return Math.floor((new Date()-new Date(dataStr))/86400000);
