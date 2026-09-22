@@ -5192,6 +5192,11 @@ async function capDelete(id) {
 
 window.loadCapData = loadCapData;
 
+function capDias(dataStr){
+  if(!dataStr)return 0;
+  return Math.floor((new Date()-new Date(dataStr))/86400000);
+}
+
 function drawCap() {
   var root = document.getElementById('captacao-root');
   if (!root) return;
