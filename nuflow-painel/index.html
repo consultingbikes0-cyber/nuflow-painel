@@ -5552,38 +5552,6 @@ function capRequestNotifPermission() {
   }
 }
 
-function capSendNotif(titulo, corpo) {
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(titulo, { body: corpo, icon: 'https://controle-bikes-nuflow.netlify.app/favicon.ico' });
-  }
-}
-
-var _capUltimoCount = null;
-
-async function capChecarNovas() {
-  try {
-    var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=id,status,marca,modelo,nome&limit=1');
-    if (!Array.isArray(data) || data.length === 0) return;
-    var novas = data.filter(function(b){ return b.status === 'novo'; });
-    if (_capUltimoCount === null) { _capUltimoCount = novas.length; return; }
-    if (novas.length > _capUltimoCount) {
-      var b = data[0];
-      capSendNotif('Nova bike recebida! 🚲', (b.marca||'')+ ' ' +(b.modelo||'')+' — '+(b.nome||''));
-      _capUltimoCount = novas.length;
-      await loadCapData();
-    }
-  } catch(e) {}
-}
-
-window.capSetFilter = function(el) {
-  capFilter = el.getAttribute('data-filter') || 'todos';
-  drawCap();
-};
-
-window.capSetSubTab = function(idx) {
-  capSubTab = idx === 0 ? 'lista' : 'analise';
-  drawCap();
-};
 
 function capRequestNotifPermission(){
   if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
