@@ -199,6 +199,15 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 </style>
 </head>
 <body>
+<div id="nf-login" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px">
+  <form onsubmit="nfLogin(event)" style="width:100%;max-width:360px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:2rem">
+    <div class="logo" style="margin-bottom:1.5rem"><div class="logo-dot"></div>NUFLOW BIKES</div>
+    <div class="fg" style="margin-bottom:1rem"><label for="nf-login-email">E-mail</label><input id="nf-login-email" type="email" autocomplete="username" required></div>
+    <div class="fg" style="margin-bottom:1.25rem"><label for="nf-login-senha">Senha</label><input id="nf-login-senha" type="password" autocomplete="current-password" required></div>
+    <button id="nf-login-btn" class="btn btn-primary" type="submit" style="width:100%">Entrar</button>
+    <div id="nf-login-msg" style="margin-top:1rem;font-size:13px;color:var(--red);min-height:1em"></div>
+  </form>
+</div>
 
 <header>
   <div class="logo"><div class="logo-dot"></div>NUFLOW BIKES</div>
@@ -214,7 +223,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
       <span id="alertas-count" style="position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:9px;font-family:'DM Mono',monospace;border-radius:10px;padding:1px 5px;min-width:16px;text-align:center"></span>
     </div>
     <div id="alertas-panel" style="display:none;position:absolute;top:56px;right:16px;width:340px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);z-index:200;box-shadow:0 8px 32px #0008;max-height:400px;overflow-y:auto"></div>
-    <span class="sync-status idle" id="sync-status">conectando...</span>
+    <span class="sync-status idle" id="sync-status">conectando...</span> <button class="btn btn-sm" style="margin-left:10px" onclick="nfLogout()" title="Sair do painel">Sair</button>
   </div>
 </header>
 
@@ -585,6 +594,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 // Storage importado sob demanda
 
 const app = initializeApp({
@@ -596,6 +606,9 @@ const app = initializeApp({
   appId:"1:833518382862:web:76dfcca1cd8ad3bf2d715f"
 });
 const db=getFirestore(app);
+const auth=getAuth(app);
+// Expõe a conexão para os scripts fora deste módulo (salvarCliente dependia disso e falhava em silêncio)
+window.db=db;
 let storage=null; // inicializado sob demanda
 const bikesCol=collection(db,'bikes');
 let bikes=[];
@@ -4733,6 +4746,8 @@ document.getElementById('modal-rapido')?.addEventListener('click',e=>{
 
 // ===== RENDER CLIENTES =====
 let _clientesData = [];
+// Acesso para salvarCliente (fica em outro bloco de script); o getter acompanha reatribuições da lista
+Object.defineProperty(window,'_clientesData',{get:()=>_clientesData,configurable:true});
 let _clienteDetalhe = null;
 let _clienteBusca = '';
 
@@ -5109,8 +5124,57 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(dataEl)dataEl.value=new Date().toISOString().split('T')[0];
   const gastoDataEl=document.getElementById('g-data');
   if(gastoDataEl)gastoDataEl.value=new Date().toISOString().split('T')[0];
-  loadData();
+  // Os dados só carregam depois do login (Firebase + Supabase)
+  onAuthStateChanged(auth, async user => {
+    if (user && await window.sbHasSession()) nfEntrar();
+    else window.nfShowLogin();
+  });
 });
+
+// ===== LOGIN =====
+let _nfIniciado=false;
+function nfLoginMsg(t){const el=document.getElementById('nf-login-msg');if(el)el.textContent=t||'';}
+function nfEntrar(){
+  document.getElementById('nf-login').style.display='none';
+  if(_nfIniciado)return;
+  _nfIniciado=true;
+  loadData();
+}
+window.nfShowLogin=function(msg){
+  document.getElementById('nf-login').style.display='flex';
+  nfLoginMsg(msg||'');
+};
+window.nfLogin=async function(ev){
+  ev.preventDefault();
+  const email=document.getElementById('nf-login-email').value.trim();
+  const senha=document.getElementById('nf-login-senha').value;
+  const btn=document.getElementById('nf-login-btn');
+  btn.disabled=true;btn.textContent='Entrando...';nfLoginMsg('');
+  let etapa='Firebase';
+  try{
+    await signInWithEmailAndPassword(auth,email,senha);
+    etapa='Supabase';
+    await window.sbSignIn(email,senha);
+    document.getElementById('nf-login-senha').value='';
+    nfEntrar();
+  }catch(e){
+    const c=(e&&e.code)||'';
+    let m;
+    if(c.includes('invalid-credential')||c.includes('wrong-password')||c.includes('user-not-found')||c.includes('invalid-email')||/invalid login credentials/i.test(e.message||''))m='E-mail ou senha incorretos.';
+    else if(c.includes('too-many-requests'))m='Muitas tentativas. Aguarde alguns minutos.';
+    else m='Erro ao entrar ('+etapa+'): '+(e.message||e);
+    if(etapa==='Supabase'&&m==='E-mail ou senha incorretos.')m='Entrou no Firebase, mas o Supabase recusou. Confira se o mesmo usuário e senha foram criados no Supabase.';
+    if(etapa==='Supabase'){try{await signOut(auth);}catch(_){}}
+    nfLoginMsg(m);
+  }finally{
+    btn.disabled=false;btn.textContent='Entrar';
+  }
+};
+window.nfLogout=async function(){
+  window.sbSignOut();
+  try{await signOut(auth);}catch(e){}
+  location.reload();
+};
 </script>
 
 
@@ -5127,20 +5191,74 @@ let capDetalhe = null;
 let capLoaded = false;
 let _capUltimoId = null;
 
+// ===== LOGIN (Supabase Auth) =====
+// A sessão fica guardada neste navegador; o token é renovado sozinho antes de expirar.
+var SB_SESSION_KEY = 'nf_sb_session';
+var _sbSession = null;
+function sbLoadSession() {
+  try { _sbSession = JSON.parse(localStorage.getItem(SB_SESSION_KEY) || 'null'); } catch (e) { _sbSession = null; }
+  return _sbSession;
+}
+function sbSaveSession(s) {
+  _sbSession = s;
+  try { if (s) localStorage.setItem(SB_SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SB_SESSION_KEY); } catch (e) {}
+}
+async function sbAuthRequest(grant, body) {
+  var res = await fetch(SB_URL + '/auth/v1/token?grant_type=' + grant, {
+    method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  var j = {}; try { j = await res.json(); } catch (e) {}
+  if (!res.ok || !j.access_token) throw new Error(j.error_description || j.msg || j.error || ('HTTP ' + res.status));
+  var s = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 };
+  sbSaveSession(s);
+  return s;
+}
+async function sbToken() {
+  var s = _sbSession || sbLoadSession();
+  if (!s) return null;
+  if (Date.now() > s.expires_at - 60000) {
+    try { s = await sbAuthRequest('refresh_token', { refresh_token: s.refresh_token }); }
+    catch (e) { sbSaveSession(null); return null; }
+  }
+  return s.access_token;
+}
+window.sbSignIn = function(email, password) { return sbAuthRequest('password', { email: email, password: password }); };
+window.sbSignOut = function() {
+  var s = _sbSession || sbLoadSession();
+  sbSaveSession(null);
+  if (s) fetch(SB_URL + '/auth/v1/logout', { method: 'POST', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + s.access_token } }).catch(function(){});
+};
+window.sbHasSession = async function() { return !!(await sbToken()); };
+
 async function sbFetch(path, opts) {
   opts = opts || {};
+  var tok = await sbToken();
+  if (!tok) {
+    if (window.nfShowLogin) window.nfShowLogin('Sua sessão expirou. Entre novamente.');
+    throw new Error('Sessão expirada');
+  }
   var res;
   try{
     res = await fetch(SB_URL+path, {
       method: opts.method || 'GET',
-      headers: Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'}, opts.headers||{}),
+      headers: Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=minimal'}, opts.headers||{}),
       body: opts.body
     });
   }catch(e){
     console.error('[sbFetch] Falha de conexão com Supabase:',e);
     throw new Error('CONEXAO_SUPABASE_FALHOU');
   }
-  if (res.status === 204 || res.status === 200 && opts.method === 'DELETE') return {};
+  if (res.status === 401) {
+    sbSaveSession(null);
+    if (window.nfShowLogin) window.nfShowLogin('Sua sessão expirou. Entre novamente.');
+    throw new Error('Sessão expirada');
+  }
+  if (!res.ok) {
+    // Antes, erros de gravação eram ignorados em silêncio; agora aparecem para quem clicou
+    var detalhe = ''; try { var j = await res.json(); detalhe = j.message || j.hint || j.error || ''; } catch (e) {}
+    throw new Error(detalhe || ('Erro ' + res.status + ' no Supabase'));
+  }
+  if (res.status === 204 || opts.method === 'DELETE') return {};
   try { return await res.json(); } catch(e) { return {}; }
 }
 
@@ -5172,6 +5290,10 @@ async function loadCapData() {
 }
 
 async function capUpdateStatus(id, status) {
+  // Mantida por compatibilidade; a tela de detalhe usa capMudarStatus
+  return capMudarStatus(id, status);
+}
+async function _capUpdateStatusAntigo(id, status) {
   await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'PATCH', body:JSON.stringify({status:status})});
   var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
   capData = Array.isArray(data) ? data : [];
@@ -5185,18 +5307,60 @@ async function capUpdateStatus(id, status) {
 
 async function capDelete(id) {
   if (!confirm('Excluir esta submissão?')) return;
-  await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'DELETE'});
-  capDetalhe = null;
+  try { await sbFetch('/rest/v1/submissoes?id=eq.'+encodeURIComponent(id), {method:'DELETE'}); }
+  catch (e) { alert('Não foi possível excluir: ' + e.message); return; }
+  capDetalhe = null; capEditando = false; capRevisaoAberta = false;
   await loadCapData();
 }
 
 window.loadCapData = loadCapData;
 
-const CAP_COLORS = {novo:'var(--amber)',em_analise:'var(--blue)',aprovado:'var(--green)',reprovado:'var(--red)',vendido:'var(--purple)'};
-const CAP_LABELS = {novo:'Novo',em_analise:'Em análise',aprovado:'Aprovado',reprovado:'Reprovado',vendido:'Vendido'};
+const CAP_COLORS = {novo:'var(--amber)',em_analise:'var(--blue)',aprovado:'var(--green)',reprovado:'var(--red)',vendido:'var(--purple)',em_revisao:'var(--amber)'};
+const CAP_LABELS = {novo:'Novo',em_analise:'Em análise',em_revisao:'Em revisão',aprovado:'Aprovado',reprovado:'Reprovado',vendido:'Vendido'};
 
 // Compara IDs ignorando tipo (os botões passam o ID como texto; o Supabase pode devolver número)
 function capSameId(a, b) { return String(a) === String(b); }
+
+// Converte texto digitado pelo vendedor em texto puro antes de inserir na página.
+// O formulário é público: sem isso, alguém poderia enviar código no campo "observações"
+// e ele rodaria no painel quando o envio fosse aberto.
+function capEsc(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Lista de fotos do envio (coluna "fotos" do Supabase, bucket bike-photos). Aceita só links http(s).
+function capFotos(b) {
+  var f = b && b.fotos;
+  if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { f = f.replace(/^\{|\}$/g,'').split(','); } }
+  if (!Array.isArray(f)) return [];
+  return f.map(function(u){ return String(u||'').trim().replace(/^"|"$/g,''); })
+          .filter(function(u){ return /^https?:\/\//i.test(u); });
+}
+
+// Baixa todas as fotos do envio com nome organizado (marca_modelo_1.jpg ...)
+async function capBaixarFotos(id, btn) {
+  var b = capData.find(function(x){ return capSameId(x.id, id); });
+  if (!b) return;
+  var fotos = capFotos(b);
+  var base = ((b.marca||'bike')+'_'+(b.modelo||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  var txt = btn ? btn.textContent : '';
+  for (var i = 0; i < fotos.length; i++) {
+    if (btn) btn.textContent = 'Baixando ' + (i+1) + '/' + fotos.length + '...';
+    var ext = (fotos[i].split('?')[0].split('.').pop() || 'jpg').toLowerCase();
+    try {
+      var blob = await (await fetch(fotos[i])).blob();
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = base + '_' + (i+1) + '.' + ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(u){ return function(){ URL.revokeObjectURL(u); }; }(a.href), 2000);
+    } catch (e) {
+      window.open(fotos[i], '_blank'); // se o download direto falhar, abre a foto em nova aba
+    }
+  }
+  if (btn) btn.textContent = txt;
+}
 
 // Filtro clicável nos cards de métricas (ex.: "+30 dias")
 function capSetFilter(elem) {
@@ -5229,6 +5393,7 @@ function drawCap() {
     if (b) { root.innerHTML = drawCapDetalhe(b); return; }
     capDetalhe = null;
   }
+  capEditando = false; capRevisaoAberta = false;
   if (capSubTab === 'analise') { drawCapAnalise(root); return; }
   drawCapLista(root);
 }
@@ -5253,7 +5418,7 @@ function drawCapLista(root) {
   var aguardando = capData.filter(function(b){return b.status==='novo'||b.status==='em_analise';}).length;
   var paradas = aprovadas.filter(function(b){return capDias(b.criado_em)>30;}).length;
   var counts = {};
-  ['novo','em_analise','aprovado','reprovado','vendido'].forEach(function(s){counts[s]=capData.filter(function(b){return b.status===s;}).length;});
+  ['novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){counts[s]=capData.filter(function(b){return b.status===s;}).length;});
 
   var h = '';
 
@@ -5291,7 +5456,7 @@ function drawCapLista(root) {
 
   // Status cards
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:1.25rem">';
-  [['novo','Novos'],['em_analise','Em análise'],['aprovado','Aprovados'],['reprovado','Reprovados'],['vendido','Vendidos']].forEach(function(item){
+  [['novo','Novos'],['em_analise','Em análise'],['em_revisao','Em revisão'],['aprovado','Aprovados'],['reprovado','Reprovados'],['vendido','Vendidos']].forEach(function(item){
     var s=item[0], l=item[1], cor=CAP_COLORS[s], active=capFilter===s?'border-color:'+cor+';':'';
     h += '<div style="background:var(--bg2);border:1px solid var(--border);'+active+'border-radius:var(--radius);padding:.75rem;cursor:pointer;text-align:center" onclick="capFilter=\x27'+s+'\x27;drawCap()">';
     h += '<div style="font-size:18px;font-weight:600;color:'+cor+'">'+counts[s]+'</div>';
@@ -5301,7 +5466,7 @@ function drawCapLista(root) {
 
   // Filter buttons
   h += '<div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">';
-  ['todos','novo','em_analise','aprovado','reprovado','vendido'].forEach(function(s){
+  ['todos','novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){
     var active=capFilter===s?'background:var(--bg4);color:var(--text);':'';
     var lbl=s==='todos'?'Todos ('+capData.length+')':s==='paradas30'?'+30 dias ('+_capParadas30List.length+')':CAP_LABELS[s];
     h += '<button class="btn btn-sm" style="'+active+'" onclick="capFilter=\x27'+s+'\x27;drawCap()">'+lbl+'</button>';
@@ -5314,111 +5479,443 @@ function drawCapLista(root) {
   } else {
     filtered.forEach(function(b){
       var cor=CAP_COLORS[b.status]||'var(--border)';
-      var preco=b.preco_pedido?capFmtR(b.preco_pedido):'—';
-      var com=b.preco_pedido?capFmtR(capCalcCom(b.preco_pedido)):'—';
+      var preco=capPrecoSite(b)?capFmtR(capPrecoSite(b)):'—';
+      var com=capPrecoSite(b)?capFmtR(capCalcCom(capPrecoSite(b))):'—';
       var dias=capDias(b.criado_em);
       var diasLbl=dias===0?'hoje':dias+'d atrás';
       var diasCor=dias>30?'var(--amber)':'var(--text3)';
       h += '<div class="bike-card" style="cursor:pointer;border-left:3px solid '+cor+'" onclick="capDetalhe=\x27'+b.id+'\x27;drawCap()">';
       h += '<div class="bike-top"><div>';
-      h += '<div class="bike-name">'+(b.marca||'')+' '+(b.modelo||'')+' '+(b.ano||'')+'</div>';
-      h += '<div class="bike-sub-info">'+(b.tipo||'')+' · '+(b.tamanho||'')+' · '+(b.cidade||'')+'-'+(b.estado||'')+'</div>';
+      h += '<div class="bike-name">'+(capEsc(b.marca)||'')+' '+(capEsc(b.modelo)||'')+' '+(capEsc(b.ano)||'')+'</div>';
+      h += '<div class="bike-sub-info">'+(capEsc(b.tipo)||'')+' · '+(capEsc(b.tamanho)||'')+' · '+(capEsc(b.cidade)||'')+'-'+(capEsc(b.estado)||'')+'</div>';
       h += '</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">';
       h += '<span class="badge" style="background:'+cor+'20;color:'+cor+'">'+(CAP_LABELS[b.status]||b.status)+'</span>';
       h += '<span style="font-size:11px;color:'+diasCor+';font-family:DM Mono,monospace">'+diasLbl+'</span>';
       h += '</div></div>';
       h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:4px">';
-      h += '<div style="font-size:13px;color:var(--text2)">👤 '+(b.nome||'—')+' · 📱 '+(b.whatsapp||'—')+'</div>';
+      h += '<div style="font-size:13px;color:var(--text2)">👤 '+(capEsc(b.nome)||'—')+' · 📱 '+(capEsc(b.whatsapp)||'—')+'</div>';
       h += '<div style="display:flex;gap:12px;align-items:center">';
       h += '<div style="text-align:right"><div style="font-size:10px;color:var(--text3)">comissão</div><div style="font-size:12px;color:var(--teal);font-weight:600">'+com+'</div></div>';
       h += '<div style="font-size:15px;font-weight:600;color:var(--green)">'+preco+'</div>';
-      h += '</div></div></div>';
+      h += '</div></div>';
+      if (b.status==='em_revisao') { var _m=capMotivos(b); h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+_m.map(function(m){return '<span class="badge" style="background:var(--amber-dim);color:var(--amber)">🔁 '+capEsc(capMotivoLabel(m))+'</span>';}).join('')+'</div>'; }
+      h += '</div>';
     });
   }
 
   root.innerHTML = h;
 }
 
-function drawCapDetalhe(b) {
-  var cor = CAP_COLORS[b.status]||'var(--text3)';
-  var preco = b.preco_pedido ? capFmtR(b.preco_pedido) : '—';
-  var com = b.preco_pedido ? capFmtR(capCalcCom(b.preco_pedido)) : '—';
-  var dias = capDias(b.criado_em);
-  var wpp = (b.whatsapp||'').replace(/\D/g,'');
-  var wppNum = wpp.startsWith('55') ? wpp : '55'+wpp;
-  var nome1 = (b.nome||'').split(' ')[0];
-  var bid = b.id;
+// ===== DETALHE DA CAPTAÇÃO: visualizar, editar, pedir revisão =====
+var capEditando = false;      // true = formulário de edição aberto
+var capEditFotos = [];        // cópia de trabalho das fotos durante a edição
+var capRevisaoAberta = false; // true = painel "Pedir revisão" aberto
 
+var CAP_MOTIVOS = [
+  ['fotos', 'Fotos'],
+  ['descricao', 'Descrição / componentes'],
+  ['valores', 'Valores'],
+  ['vendedor', 'Dados do vendedor'],
+  ['documentacao', 'Documentação / nota fiscal'],
+  ['outro', 'Outro']
+];
+function capMotivoLabel(k) {
+  for (var i = 0; i < CAP_MOTIVOS.length; i++) if (CAP_MOTIVOS[i][0] === k) return CAP_MOTIVOS[i][1];
+  return k;
+}
+function capMotivos(b) {
+  var m = b && b.revisao_motivos;
+  if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { m = m.replace(/^\{|\}$/g,'').split(','); } }
+  return Array.isArray(m) ? m.filter(Boolean) : [];
+}
+function capPrecoSite(b) { return Number(b.preco_venda || b.preco_pedido || 0); }
+function capBike(id) { return capData.find(function(x){ return capSameId(x.id, id); }); }
+
+// Converte "25.000", "25000", "25.000,50" em número
+function capNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var s = String(v).trim().replace(/[R$\s]/g,'');
+  if (s.indexOf(',') >= 0) s = s.replace(/\./g,'').replace(',','.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g,'');
+  var n = Number(s);
+  return isFinite(n) ? n : null;
+}
+
+// Grava alterações de um envio no Supabase e atualiza a lista
+async function capSalvar(id, campos) {
+  campos.atualizado_em = new Date().toISOString();
+  await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(campos) });
+  var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+  capData = Array.isArray(data) ? data : capData;
+  window.capData = capData;
+}
+
+// ---------- Descrição do anúncio (HTML que vai para a loja) ----------
+function capGerarDescricao(b) {
+  var e = capEsc;
+  var marca = String(b.marca || '').toUpperCase();
+  var modelo = String(b.modelo || '').toUpperCase();
+  var ano = b.ano || '', tam = b.tamanho || '';
+  var titulo = (marca + ' ' + modelo + (ano ? ' - ' + ano : '') + (tam ? ' - TAMANHO ' + String(tam).toUpperCase() : '')).trim();
+  var tipoLabel = b.tipo ? String(b.tipo).toUpperCase() : 'MTB';
+  var precoN = capPrecoSite(b);
+  var preco = precoN ? 'R$ ' + precoN.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
+
+  var comp = [];
+  if (b.suspensao) comp.push(['Suspensão', b.suspensao]);
+  if (b.shock) comp.push(['Amortecedor', b.shock]);
+  if (b.freios) comp.push(['Freios', b.freios]);
+  if (b.relacao) comp.push(['Transmissão', b.relacao]);
+  if (b.rodas) comp.push(['Rodas', b.rodas]);
+  if (tam) comp.push(['Tamanho', tam]);
+  if (b.outros_componentes) String(b.outros_componentes).split(/[,;\n]+/).forEach(function(t){ t = t.trim(); if (t) comp.push([t, '']); });
+  var rows = comp.map(function(c, i){
+    return '\n    <tr' + (i > 0 ? ' style="border-top:1px solid #eeeeee;"' : '') + '>\n      <td style="padding:6px 0;color:#888888;width:160px;vertical-align:top;font-size:12px;">' + e(c[0]) + '</td>\n      <td style="padding:6px 0;color:#111111;font-weight:600;">' + e(c[1]) + '</td>\n    </tr>';
+  }).join('');
+
+  var condTxt = b.observacoes ? e(b.observacoes) : 'Bike seminova em bom estado geral, conforme informado pelo vendedor. Estado confirmado no laudo técnico antes da entrega.';
+
+  return '<!--NUFLOW BIKES - DESCRICAO DE PRODUTO PREMIUM-->\n' +
+'<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;color:#1a1a1a;background:#ffffff;padding:0;">\n' +
+'  <p style="font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#111111;margin:0 0 8px 0;padding:20px 20px 0 20px;">' + e(titulo) + '</p>\n' +
+'  <p style="margin:0 0 16px 0;padding:0 20px;"><span style="display:inline-block;background:#202d18;color:#c8ff00;font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:3px 10px;border-radius:2px;">' + e(tipoLabel) + ' · Seminova</span></p>\n' +
+'  <p style="font-size:14px;color:#444444;line-height:1.7;margin:0 0 20px 0;padding:0 20px;">Uma das bikes mais desejadas do mercado, selecionada pela curadoria Nuflow. Pronta para trilhas, viagens e pedaladas de alto nível.</p>\n' +
+'  <div style="background:#f8f8f8;border:2px solid #111111;margin:0 0 2px 0;padding:12px 20px;">\n' +
+'    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 12px 0;">Componentes em Destaque</p>\n' +
+'    <table style="width:100%;border-collapse:collapse;font-size:13px;"><tbody>' + rows + '\n    </tbody></table>\n' +
+'  </div>\n' +
+'  <div style="background:#fffbf0;border:2px solid #e6a800;margin:2px 0;padding:12px 20px;">\n' +
+'    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#b37800;margin:0 0 6px 0;">⚠️ Condição da Bike</p>\n' +
+'    <p style="font-size:13px;color:#333333;line-height:1.6;margin:0;">' + condTxt + '</p>\n' +
+'  </div>\n' +
+'  <div style="background:#f0f5ee;border:2px solid #111111;margin:2px 0;padding:14px 20px;">\n' +
+'    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 4px 0;">✅ Laudo técnico antes da entrega</p>\n' +
+'    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Antes de seguir para você, esta bike passa por um laudo técnico completo na Nuflow: quadro, suspensões, freios, transmissão e rodas. Qualquer ajuste necessário é feito nesse momento, pouco antes do envio. Assim ela chega pronta para pedalar, sem o desgaste de ficar parada depois da revisão.</p>\n' +
+'  </div>\n' +
+'  <div style="background:#f8f8f8;border-top:2px solid #202d18;margin:2px 0 0 0;padding:16px 20px;">\n' +
+'    <p style="font-size:11px;color:#888888;letter-spacing:1px;text-transform:uppercase;margin:0 0 4px 0;">Preço</p>\n' +
+'    <p style="font-size:26px;font-weight:900;color:#202d18;margin:0 0 12px 0;font-family:monospace;">' + preco + '</p>\n' +
+'    <div style="background:#202d18;padding:10px 16px;border-radius:3px;display:inline-block;">\n' +
+'      <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#ffffff;margin:0 0 2px 0;">COMPRA SOMENTE PELO WHATSAPP</p>\n' +
+'      <p style="font-size:11px;color:rgba(255,255,255,0.65);margin:0;">Laudo técnico antes da entrega + curadoria Nuflow + entrega nacional</p>\n' +
+'    </div>\n' +
+'  </div>\n' +
+'</div>';
+}
+
+// ---------- Tela de detalhe ----------
+function capCard(titulo, corpo, extraTopo) {
+  return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;gap:8px;flex-wrap:wrap">' +
+    '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace">' + titulo + '</div>' + (extraTopo || '') + '</div>' + corpo + '</div>';
+}
+function capInfo(label, valor, estilo) {
+  return '<div><div style="font-size:11px;color:var(--text3)">' + label + '</div><div style="font-weight:500;' + (estilo || '') + '">' + valor + '</div></div>';
+}
+
+function drawCapDetalhe(b) {
+  if (capEditando) return drawCapEditar(b);
+
+  var cor = CAP_COLORS[b.status] || 'var(--text3)';
+  var precoSite = capPrecoSite(b);
+  var dias = capDias(b.criado_em);
+  var wpp = (b.whatsapp || '').replace(/\D/g, '');
+  var wppNum = wpp ? (wpp.startsWith('55') ? wpp : '55' + wpp) : '';
+  var nome1 = (b.nome || '').split(' ')[0];
+  var bid = capEsc(b.id);
   _capDescAtual = b.descricao_gerada || '';
 
   var h = '';
-  h += '<div style="margin-bottom:1.25rem"><button class="btn btn-sm" onclick="capDetalhe=null;drawCap()">← Voltar</button></div>';
+  h += '<div style="margin-bottom:1.25rem"><button class="btn btn-sm" onclick="capFecharDetalhe()">← Voltar</button></div>';
 
-  // Title + status
   h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:1.5rem">';
-  h += '<div><div style="font-size:22px;font-weight:600">'+(b.marca||'')+' '+(b.modelo||'')+' '+(b.ano||'')+'</div>';
-  h += '<div style="font-size:13px;color:var(--text3);margin-top:4px;font-family:DM Mono,monospace">Enviado '+capFmtDate(b.criado_em)+' · '+dias+' dias atrás</div></div>';
-  h += '<span class="badge" style="background:'+cor+'20;color:'+cor+';font-size:13px;padding:6px 14px">'+(CAP_LABELS[b.status]||b.status)+'</span></div>';
+  h += '<div><div style="font-size:22px;font-weight:600">' + capEsc(b.marca) + ' ' + capEsc(b.modelo) + ' ' + capEsc(b.ano) + '</div>';
+  h += '<div style="font-size:13px;color:var(--text3);margin-top:4px;font-family:DM Mono,monospace">Enviado ' + capFmtDate(b.criado_em) + ' · ' + dias + ' dias atrás' + (b.atualizado_em ? ' · editado ' + capFmtDate(b.atualizado_em) : '') + '</div></div>';
+  h += '<span class="badge" style="background:' + cor + '20;color:' + cor + ';font-size:13px;padding:6px 14px">' + capEsc(CAP_LABELS[b.status] || b.status) + '</span></div>';
 
-  // Vendedor + bike
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem">';
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Vendedor</div>';
-  h += '<div style="display:flex;flex-direction:column;gap:8px">';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Nome</div><div style="font-weight:500">'+(b.nome||'—')+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">WhatsApp</div><div style="font-weight:500">'+(b.whatsapp||'—')+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Cidade</div><div style="font-weight:500">'+(b.cidade||'—')+' - '+(b.estado||'—')+'</div></div>';
-  h += '</div></div>';
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Bike</div>';
-  h += '<div style="display:flex;flex-direction:column;gap:8px">';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Tipo / Tam.</div><div style="font-weight:500">'+(b.tipo||'—')+' · '+(b.tamanho||'—')+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Preço pedido</div><div style="font-size:18px;font-weight:600;color:var(--green)">'+preco+'</div></div>';
-  h += '<div><div style="font-size:11px;color:var(--text3)">Comissão estimada</div><div style="font-size:15px;font-weight:600;color:var(--teal)">'+com+'</div></div>';
-  h += '</div></div></div>';
-
-  // Componentes
-  var campos = [['Suspensão',b.suspensao],['Amortecedor',b.shock],['Freios',b.freios],['Transmissão',b.relacao],['Rodas',b.rodas],['Extras',b.outros_componentes],['Observações',b.observacoes]].filter(function(x){return !!x[1];});
-  if (campos.length>0) {
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
-    h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Componentes</div>';
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">';
-    campos.forEach(function(c){
-      h += '<div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:DM Mono,monospace;margin-bottom:3px">'+c[0]+'</div><div style="font-size:13px">'+c[1]+'</div></div>';
-    });
-    h += '</div></div>';
-  }
-
-  // Descrição
-  if (b.descricao_gerada) {
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">';
-    h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace">Descrição gerada</div>';
-    h += '<button class="btn btn-sm btn-teal" onclick="capCopyDesc(this)">📋 Copiar HTML</button>';
-    h += '</div>';
-    h += '<div style="background:white;color:#111;padding:1.25rem;border-radius:8px;font-family:sans-serif;line-height:1.6">'+b.descricao_gerada+'</div>';
+  // Pendências de revisão
+  if (b.status === 'em_revisao') {
+    var mot = capMotivos(b);
+    h += '<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.25rem">';
+    h += '<div style="font-weight:600;color:var(--amber);margin-bottom:6px">🔁 Em revisão' + (b.revisao_em ? ' desde ' + capFmtDate(b.revisao_em) + ' (' + capDias(b.revisao_em) + 'd)' : '') + '</div>';
+    if (mot.length) h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">' + mot.map(function(m){ return '<span class="badge" style="background:var(--bg3);color:var(--amber)">' + capEsc(capMotivoLabel(m)) + '</span>'; }).join('') + '</div>';
+    if (b.revisao_obs) h += '<div style="font-size:13px;white-space:pre-wrap">' + capEsc(b.revisao_obs) + '</div>';
     h += '</div>';
   }
 
-  // Ações
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem;align-items:center">';
-  if (b.status==='novo') h += '<button class="btn btn-sm btn-blue" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27em_analise\x27)">🔍 Em análise</button>';
-  if (b.status==='novo'||b.status==='em_analise') h += '<button class="btn btn-sm" style="color:var(--green);border-color:var(--green-dim)" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27aprovado\x27)">✅ Aprovar</button>';
-  if (b.status==='novo'||b.status==='em_analise'||b.status==='aprovado') h += '<button class="btn btn-sm btn-danger" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27reprovado\x27)">❌ Reprovar</button>';
-  if (b.status==='aprovado') h += '<button class="btn btn-sm" style="color:var(--purple);border-color:var(--purple-dim)" onclick="capUpdateStatus(\x27'+bid+'\x27,\x27vendido\x27)">💰 Vendida</button>';
-  if (wppNum) {
-    var msgOk = encodeURIComponent('Olá '+nome1+'! Sou da Nuflow Bikes. Analisamos sua '+(b.marca||'')+' '+(b.modelo||'')+' e temos interesse! Podemos conversar?');
-    var msgNao = encodeURIComponent('Olá '+nome1+'! Sou da Nuflow Bikes. Analisamos sua '+(b.marca||'')+' '+(b.modelo||'')+' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
-    var diasStr = dias > 0 ? dias + ' dias' : 'alguns dias';
-    var msgCobrar = encodeURIComponent('Olá ' + nome1 + '! Tudo bem? Sua ' + (b.marca||'') + ' ' + (b.modelo||'') + ' está anunciada há ' + diasStr + ' e ainda não vendeu. Gostaria de reduzir o valor para acelerar a venda? Me fala o que acha!');
-    h += '<a href="https://wa.me/'+wppNum+'?text='+msgOk+'" target="_blank" class="btn btn-sm btn-teal" style="text-decoration:none">💬 Contato</a>';
-    if (b.status==='reprovado') h += '<a href="https://wa.me/'+wppNum+'?text='+msgNao+'" target="_blank" class="btn btn-sm" style="text-decoration:none">📩 Resp. negativa</a>';
-    if (b.status === 'aprovado' && dias >= 30) h += '<a href="https://wa.me/' + wppNum + '?text=' + msgCobrar + '" target="_blank" class="btn btn-sm btn-amber" style="text-decoration:none">⏰ Cobrar vendedor (+30d)</a>';
-  }
-  h += '<button class="btn btn-sm btn-danger" style="margin-left:auto" onclick="capDelete(\x27'+bid+'\x27)">🗑 Excluir</button>';
+  // Vendedor + valores
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:1.25rem">';
+  h += capCard('Vendedor', '<div style="display:flex;flex-direction:column;gap:8px">' +
+    capInfo('Nome', capEsc(b.nome) || '—') + capInfo('WhatsApp', capEsc(b.whatsapp) || '—') +
+    capInfo('Cidade', (capEsc(b.cidade) || '—') + ' - ' + (capEsc(b.estado) || '—')) + '</div>').replace('margin-bottom:1.25rem', 'margin-bottom:0');
+  var com = precoSite ? capCalcCom(precoSite) : 0;
+  h += capCard('Bike e valores', '<div style="display:flex;flex-direction:column;gap:8px">' +
+    capInfo('Tipo / Tam.', (capEsc(b.tipo) || '—') + ' · ' + (capEsc(b.tamanho) || '—')) +
+    capInfo('Preço no site', precoSite ? capFmtR(precoSite) : '—', 'font-size:18px;font-weight:600;color:var(--green)') +
+    capInfo('Vendedor pediu', b.preco_pedido ? capFmtR(b.preco_pedido) : '—') +
+    capInfo('Comissão estimada · vendedor recebe', precoSite ? capFmtR(com) + ' · ' + capFmtR(precoSite - com) : '—', 'color:var(--teal)') +
+    '</div>').replace('margin-bottom:1.25rem', 'margin-bottom:0');
   h += '</div>';
 
+  // Fotos
+  var fotos = capFotos(b);
+  var corpoFotos = fotos.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">' +
+    fotos.map(function(u, i){
+      return '<a href="' + capEsc(u) + '" target="_blank" rel="noopener" title="Abrir foto ' + (i+1) + ' em tamanho real" style="position:relative;display:block;aspect-ratio:4/3;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg3)">' +
+        '<img src="' + capEsc(u) + '" loading="lazy" alt="Foto ' + (i+1) + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
+        (i === 0 ? '<span class="badge" style="position:absolute;top:6px;left:6px;background:#000a;color:var(--green)">Capa</span>' : '') + '</a>';
+    }).join('') + '</div>' : '<div style="font-size:13px;color:var(--text3)">Nenhuma foto neste envio.</div>';
+  h += capCard('Fotos (' + fotos.length + ')', corpoFotos, fotos.length ? '<button class="btn btn-sm btn-teal" onclick="capBaixarFotos(\x27' + bid + '\x27,this)">⬇ Baixar todas</button>' : '');
+
+  // Componentes
+  var campos = [['Suspensão', b.suspensao], ['Amortecedor', b.shock], ['Freios', b.freios], ['Transmissão', b.relacao], ['Rodas', b.rodas], ['Extras', b.outros_componentes], ['Condição / observações', b.observacoes]].filter(function(x){ return !!x[1]; });
+  if (campos.length) {
+    h += capCard('Componentes', '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">' + campos.map(function(c){
+      return '<div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:DM Mono,monospace;margin-bottom:3px">' + capEsc(c[0]) + '</div><div style="font-size:13px;white-space:pre-wrap">' + capEsc(c[1]) + '</div></div>';
+    }).join('') + '</div>');
+  }
+
+  // Descrição (sempre gerada a partir dos dados atuais, já com as suas edições)
+  var desc = capGerarDescricao(b);
+  _capDescAtual = desc;
+  h += capCard('Descrição do anúncio', '<iframe sandbox="" title="Prévia da descrição" style="width:100%;height:560px;border:0;background:white;border-radius:8px" srcdoc="' + capEsc(desc) + '"></iframe>',
+    '<button class="btn btn-sm btn-teal" onclick="capCopyDesc(this)">📋 Copiar HTML</button>');
+
+  // Painel "Pedir revisão"
+  if (capRevisaoAberta) h += drawCapRevisao(b);
+
+  // Ações
+  var st = b.status;
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem;align-items:center">';
+  if (st !== 'vendido') h += '<button class="btn btn-sm btn-primary" onclick="capAbrirEdicao(\x27' + bid + '\x27)">✏️ Editar anúncio</button>';
+  if (st === 'novo') h += '<button class="btn btn-sm btn-blue" onclick="capMudarStatus(\x27' + bid + '\x27,\x27em_analise\x27)">🔍 Em análise</button>';
+  if (st === 'novo' || st === 'em_analise' || st === 'em_revisao') h += '<button class="btn btn-sm btn-amber" onclick="capRevisaoAberta=!capRevisaoAberta;drawCap()">🔁 ' + (st === 'em_revisao' ? 'Editar pendências' : 'Pedir revisão') + '</button>';
+  if (st === 'novo' || st === 'em_analise' || st === 'em_revisao') h += '<button class="btn btn-sm" style="color:var(--green);border-color:var(--green-dim)" onclick="capMudarStatus(\x27' + bid + '\x27,\x27aprovado\x27)">✅ Aprovar</button>';
+  if (st === 'novo' || st === 'em_analise' || st === 'em_revisao' || st === 'aprovado') h += '<button class="btn btn-sm btn-danger" onclick="capMudarStatus(\x27' + bid + '\x27,\x27reprovado\x27)">❌ Reprovar</button>';
+  if (st === 'aprovado') h += '<button class="btn btn-sm" style="color:var(--purple);border-color:var(--purple-dim)" onclick="capMudarStatus(\x27' + bid + '\x27,\x27vendido\x27)">💰 Vendida</button>';
+  if (wppNum) {
+    var msgOk = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e temos interesse! Podemos conversar?');
+    var msgNao = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
+    var msgCobrar = encodeURIComponent('Olá ' + nome1 + '! Tudo bem? Sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' está anunciada há ' + (dias > 0 ? dias + ' dias' : 'alguns dias') + ' e ainda não vendeu. Gostaria de reduzir o valor para acelerar a venda? Me fala o que acha!');
+    h += '<a href="https://wa.me/' + wppNum + '?text=' + msgOk + '" target="_blank" class="btn btn-sm btn-teal" style="text-decoration:none">💬 Contato</a>';
+    if (st === 'em_revisao') h += '<a href="https://wa.me/' + wppNum + '?text=' + encodeURIComponent(capMsgRevisao(b, capMotivos(b), b.revisao_obs)) + '" target="_blank" class="btn btn-sm btn-amber" style="text-decoration:none">📩 Reenviar pendências</a>';
+    if (st === 'reprovado') h += '<a href="https://wa.me/' + wppNum + '?text=' + msgNao + '" target="_blank" class="btn btn-sm" style="text-decoration:none">📩 Resp. negativa</a>';
+    if (st === 'aprovado' && dias >= 30) h += '<a href="https://wa.me/' + wppNum + '?text=' + msgCobrar + '" target="_blank" class="btn btn-sm btn-amber" style="text-decoration:none">⏰ Cobrar vendedor (+30d)</a>';
+  }
+  h += '<button class="btn btn-sm btn-danger" style="margin-left:auto" onclick="capDelete(\x27' + bid + '\x27)">🗑 Excluir</button>';
+  h += '</div>';
   return h;
+}
+
+function capFecharDetalhe() { capDetalhe = null; capEditando = false; capRevisaoAberta = false; drawCap(); }
+
+async function capMudarStatus(id, status) {
+  var campos = { status: status };
+  if (status === 'aprovado') {
+    // Ao aprovar, grava a descrição final gerada a partir dos dados editados
+    var b = capBike(id);
+    if (b) campos.descricao_gerada = capGerarDescricao(b);
+  }
+  try {
+    await capSalvar(id, campos);
+    capDetalhe = id; capRevisaoAberta = false;
+    drawCap();
+  } catch (e) {
+    alert('Não foi possível mudar o status: ' + e.message);
+  }
+}
+
+// ---------- Pedir revisão ----------
+function capMsgRevisao(b, motivos, obs) {
+  var nome1 = (b.nome || '').split(' ')[0];
+  var linhas = ['Olá ' + nome1 + '! Aqui é da Nuflow Bikes. Recebemos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e, para seguir com o anúncio, precisamos de um ajuste:'];
+  motivos.forEach(function(m){ linhas.push('• ' + capMotivoLabel(m)); });
+  if (obs) linhas.push('', obs);
+  linhas.push('', 'É só responder por aqui. Obrigado!');
+  return linhas.join('\n');
+}
+
+function drawCapRevisao(b) {
+  var atuais = capMotivos(b);
+  var h = '<div style="background:var(--bg2);border:1px solid var(--amber);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
+  h += '<div style="font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Pedir revisão ao vendedor</div>';
+  h += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:1rem">';
+  CAP_MOTIVOS.forEach(function(m){
+    h += '<label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" class="cap-motivo" value="' + m[0] + '"' + (atuais.indexOf(m[0]) >= 0 ? ' checked' : '') + '> ' + m[1] + '</label>';
+  });
+  h += '</div>';
+  h += '<div class="fg" style="margin-bottom:1rem"><label>O que precisa ser corrigido (vai na mensagem)</label><textarea id="cap-rev-obs" rows="3" placeholder="Ex.: a foto 2 está desfocada, mande o cockpit de frente.">' + capEsc(b.revisao_obs || '') + '</textarea></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+  h += '<button class="btn btn-sm btn-amber" onclick="capSalvarRevisao(\x27' + capEsc(b.id) + '\x27,true)">💾 Salvar e avisar no WhatsApp</button>';
+  h += '<button class="btn btn-sm" onclick="capSalvarRevisao(\x27' + capEsc(b.id) + '\x27,false)">Só salvar</button>';
+  h += '<button class="btn btn-sm" onclick="capRevisaoAberta=false;drawCap()">Cancelar</button>';
+  h += '</div></div>';
+  return h;
+}
+
+async function capSalvarRevisao(id, avisar) {
+  var b = capBike(id); if (!b) return;
+  var motivos = Array.prototype.slice.call(document.querySelectorAll('.cap-motivo:checked')).map(function(c){ return c.value; });
+  var obs = (document.getElementById('cap-rev-obs') || {}).value || '';
+  if (!motivos.length) { alert('Marque pelo menos um motivo da revisão.'); return; }
+  var wpp = (b.whatsapp || '').replace(/\D/g, '');
+  // Abre a aba do WhatsApp já no clique (senão o navegador bloqueia como pop-up)
+  var janela = (avisar && wpp) ? window.open('about:blank', '_blank') : null;
+  try {
+    await capSalvar(id, { status: 'em_revisao', revisao_motivos: motivos, revisao_obs: obs.trim() || null, revisao_em: new Date().toISOString() });
+    if (janela) janela.location.href = 'https://wa.me/' + (wpp.startsWith('55') ? wpp : '55' + wpp) + '?text=' + encodeURIComponent(capMsgRevisao(b, motivos, obs.trim()));
+    capRevisaoAberta = false; capDetalhe = id; drawCap();
+  } catch (e) {
+    if (janela) janela.close();
+    alert('Não foi possível salvar a revisão: ' + e.message);
+  }
+}
+
+// ---------- Edição ----------
+var CAP_CAMPOS_EDIT = [
+  // [coluna, rótulo, tipo]
+  ['marca', 'Marca', 'text'], ['modelo', 'Modelo', 'text'], ['ano', 'Ano', 'text'],
+  ['tamanho', 'Tamanho', 'text'], ['tipo', 'Tipo / modalidade', 'text'],
+  ['suspensao', 'Suspensão', 'text'], ['shock', 'Amortecedor', 'text'], ['freios', 'Freios', 'text'],
+  ['relacao', 'Transmissão', 'text'], ['rodas', 'Rodas', 'text'],
+  ['outros_componentes', 'Extras (separe por vírgula)', 'textarea'],
+  ['observacoes', 'Condição da bike (aparece no anúncio)', 'textarea']
+];
+
+function capAbrirEdicao(id) {
+  var b = capBike(id); if (!b) return;
+  capEditFotos = capFotos(b).slice();
+  capEditando = true; capRevisaoAberta = false; capDetalhe = id;
+  drawCap();
+  window.scrollTo(0, 0);
+}
+
+function drawCapEditar(b) {
+  var bid = capEsc(b.id);
+  var h = '<div style="margin-bottom:1.25rem;display:flex;gap:10px"><button class="btn btn-sm" onclick="capCancelarEdicao()">← Cancelar edição</button></div>';
+  h += '<div style="font-size:22px;font-weight:600;margin-bottom:1.5rem">Editar anúncio · ' + capEsc(b.marca) + ' ' + capEsc(b.modelo) + '</div>';
+
+  // Valores
+  var precoSite = capPrecoSite(b);
+  h += capCard('Valores',
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">' +
+    '<div class="fg"><label>Preço no site (R$)</label><input id="cap-ed-preco_venda" inputmode="decimal" value="' + (precoSite || '') + '" oninput="capAtualizarCom()"></div>' +
+    '<div class="fg"><label>Vendedor pediu (R$)</label><input id="cap-ed-preco_pedido" inputmode="decimal" value="' + (b.preco_pedido || '') + '"></div>' +
+    '<div class="fg"><label>Comissão · vendedor recebe</label><div id="cap-ed-com" style="padding:10px 0;color:var(--teal);font-weight:600"></div></div>' +
+    '</div>');
+
+  // Dados e componentes
+  h += capCard('Bike e componentes', '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">' +
+    CAP_CAMPOS_EDIT.map(function(c){
+      var v = capEsc(b[c[0]] || '');
+      var full = c[2] === 'textarea' ? 'grid-column:1/-1;' : '';
+      return '<div class="fg" style="' + full + '"><label>' + c[1] + '</label>' +
+        (c[2] === 'textarea' ? '<textarea id="cap-ed-' + c[0] + '" rows="3">' + v + '</textarea>' : '<input id="cap-ed-' + c[0] + '" value="' + v + '">') + '</div>';
+    }).join('') + '</div>');
+
+  // Fotos
+  h += capCard('Fotos (' + capEditFotos.length + ') · a primeira é a capa', '<div id="cap-ed-fotos">' + drawCapEditFotos() + '</div>',
+    '<label class="btn btn-sm btn-teal" style="position:relative;overflow:hidden;cursor:pointer">➕ Adicionar fotos<input type="file" accept="image/*" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="capUploadFotos(\x27' + bid + '\x27,this)"></label>');
+
+  h += '<div id="cap-ed-msg" style="font-size:13px;color:var(--red);margin-bottom:.75rem"></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem">';
+  h += '<button class="btn btn-primary" onclick="capSalvarEdicao(\x27' + bid + '\x27,false)">💾 Salvar alterações</button>';
+  if (b.status !== 'aprovado' && b.status !== 'vendido') h += '<button class="btn" style="color:var(--green);border-color:var(--green-dim)" onclick="capSalvarEdicao(\x27' + bid + '\x27,true)">✅ Salvar e aprovar</button>';
+  h += '<button class="btn" onclick="capCancelarEdicao()">Cancelar</button>';
+  h += '</div>';
+  setTimeout(capAtualizarCom, 0);
+  return h;
+}
+
+function drawCapEditFotos() {
+  if (!capEditFotos.length) return '<div style="font-size:13px;color:var(--text3)">Nenhuma foto. Adicione pelo botão acima.</div>';
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">' + capEditFotos.map(function(u, i){
+    var ultimo = i === capEditFotos.length - 1;
+    return '<div style="border:1px solid ' + (i === 0 ? 'var(--green)' : 'var(--border)') + ';border-radius:8px;overflow:hidden;background:var(--bg3)">' +
+      '<div style="position:relative;aspect-ratio:4/3"><img src="' + capEsc(u) + '" alt="Foto ' + (i+1) + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
+      (i === 0 ? '<span class="badge" style="position:absolute;top:6px;left:6px;background:#000a;color:var(--green)">Capa</span>' : '') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;padding:6px;gap:4px">' +
+      '<button class="btn btn-sm" title="Mover para a esquerda" ' + (i === 0 ? 'disabled style="opacity:.3"' : '') + ' onclick="capMoverFoto(' + i + ',-1)">◀</button>' +
+      (i === 0 ? '' : '<button class="btn btn-sm" title="Usar como capa" onclick="capMoverFoto(' + i + ',-' + i + ')">★</button>') +
+      '<button class="btn btn-sm" title="Mover para a direita" ' + (ultimo ? 'disabled style="opacity:.3"' : '') + ' onclick="capMoverFoto(' + i + ',1)">▶</button>' +
+      '<button class="btn btn-sm btn-danger" title="Remover do anúncio" onclick="capRemoverFoto(' + i + ')">✕</button>' +
+      '</div></div>';
+  }).join('') + '</div>';
+}
+function capRedesenharFotos() { var el = document.getElementById('cap-ed-fotos'); if (el) el.innerHTML = drawCapEditFotos(); }
+function capMoverFoto(i, passo) {
+  var j = i + passo; if (j < 0 || j >= capEditFotos.length) return;
+  var f = capEditFotos.splice(i, 1)[0]; capEditFotos.splice(j, 0, f); capRedesenharFotos();
+}
+function capRemoverFoto(i) { capEditFotos.splice(i, 1); capRedesenharFotos(); }
+
+async function capUploadFotos(id, input) {
+  var files = Array.prototype.slice.call(input.files || []);
+  if (!files.length) return;
+  var msg = document.getElementById('cap-ed-msg');
+  var safe = String(id).replace(/[^a-zA-Z0-9_\-]/g, '_');
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (msg) { msg.style.color = 'var(--text2)'; msg.textContent = 'Enviando foto ' + (i+1) + ' de ' + files.length + '...'; }
+    var ext = ((f.name.split('.').pop() || 'jpg').toLowerCase()).replace(/[^a-z0-9]/g, '') || 'jpg';
+    var path = 'painel/' + safe + '/' + Date.now() + '_' + i + '.' + ext;
+    try {
+      var tok = await sbToken();
+      var res = await fetch(SB_URL + '/storage/v1/object/bike-photos/' + path, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + (tok || SB_KEY), 'Content-Type': f.type || 'image/jpeg', 'x-upsert': 'false' },
+        body: f
+      });
+      if (!res.ok) { var t = ''; try { t = (await res.json()).message || ''; } catch (e) {} throw new Error(t || ('HTTP ' + res.status)); }
+      capEditFotos.push(SB_URL + '/storage/v1/object/public/bike-photos/' + path);
+      capRedesenharFotos();
+    } catch (e) {
+      if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Erro ao enviar ' + f.name + ': ' + e.message; }
+      input.value = '';
+      return;
+    }
+  }
+  if (msg) msg.textContent = '';
+  input.value = '';
+}
+
+function capLerCampo(col) { var el = document.getElementById('cap-ed-' + col); return el ? el.value.trim() : ''; }
+function capAtualizarCom() {
+  var el = document.getElementById('cap-ed-com'); if (!el) return;
+  var p = capNum(capLerCampo('preco_venda'));
+  el.textContent = p ? capFmtR(capCalcCom(p)) + ' · ' + capFmtR(p - capCalcCom(p)) : '—';
+}
+
+async function capSalvarEdicao(id, aprovar) {
+  var b = capBike(id); if (!b) return;
+  var msg = document.getElementById('cap-ed-msg');
+  var campos = {};
+  CAP_CAMPOS_EDIT.forEach(function(c){ campos[c[0]] = capLerCampo(c[0]) || null; });
+  var pv = capNum(capLerCampo('preco_venda')), pp = capNum(capLerCampo('preco_pedido'));
+  if (capLerCampo('preco_venda') && pv === null) { if (msg) msg.textContent = 'Preço no site inválido.'; return; }
+  if (capLerCampo('preco_pedido') && pp === null) { if (msg) msg.textContent = 'Preço pedido inválido.'; return; }
+  campos.preco_venda = pv; campos.preco_pedido = pp;
+  campos.fotos = capEditFotos.slice();
+  if (!campos.marca || !campos.modelo) { if (msg) msg.textContent = 'Marca e modelo são obrigatórios.'; return; }
+  if (aprovar && !campos.fotos.length) { if (msg) msg.textContent = 'Adicione pelo menos uma foto antes de aprovar.'; return; }
+  if (aprovar && !pv) { if (msg) msg.textContent = 'Defina o preço no site antes de aprovar.'; return; }
+  // Descrição final sempre gerada a partir do que você editou
+  campos.descricao_gerada = capGerarDescricao(Object.assign({}, b, campos));
+  if (aprovar) campos.status = 'aprovado';
+  if (msg) { msg.style.color = 'var(--text2)'; msg.textContent = 'Salvando...'; }
+  try {
+    await capSalvar(id, campos);
+    capEditando = false; capDetalhe = id;
+    drawCap();
+    window.scrollTo(0, 0);
+  } catch (e) {
+    if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Não foi possível salvar: ' + e.message; }
+  }
+}
+
+function capCancelarEdicao() {
+  if (!confirm('Descartar as alterações não salvas?')) return;
+  capEditando = false; capEditFotos = []; drawCap();
 }
 
 var capSubTab = 'lista';
@@ -5427,7 +5924,7 @@ var _capParadas30List = [];
 function drawCapAnalise(root) {
   var total = capData.length;
   var porStatus = {};
-  ['novo','em_analise','aprovado','reprovado','vendido'].forEach(function(s){
+  ['novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){
     porStatus[s] = capData.filter(function(b){return b.status===s;}).length;
   });
   var aprovadas = capData.filter(function(b){return b.status==='aprovado';});
@@ -5512,6 +6009,7 @@ function drawCapAnalise(root) {
   var funil = [
     ['Recebidas', total, 'var(--text2)'],
     ['Em análise', porStatus.em_analise, 'var(--blue)'],
+    ['Em revisão', porStatus.em_revisao, 'var(--amber)'],
     ['Aprovadas', porStatus.aprovado, 'var(--green)'],
     ['Vendidas', porStatus.vendido, 'var(--purple)'],
     ['Reprovadas', porStatus.reprovado, 'var(--red)']
@@ -5520,7 +6018,7 @@ function drawCapAnalise(root) {
     var pct = total > 0 ? Math.round((f[1]/total)*100) : 0;
     h += '<div style="margin-bottom:10px">';
     h += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">';
-    h += '<span style="color:var(--text2)">'+f[0]+'</span>';
+    h += '<span style="color:var(--text2)">'+capEsc(f[0])+'</span>';
     h += '<span style="font-family:DM Mono,monospace;color:'+f[2]+'">'+f[1]+' ('+pct+'%)</span></div>';
     h += '<div style="background:var(--bg3);border-radius:4px;height:6px;overflow:hidden">';
     h += '<div style="height:100%;border-radius:4px;background:'+f[2]+';width:'+pct+'%;transition:width .4s"></div>';
@@ -5537,7 +6035,7 @@ function drawCapAnalise(root) {
   topEstados.forEach(function(e){
     var pct = total > 0 ? Math.round((e[1]/total)*100) : 0;
     h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    h += '<span style="font-size:13px;color:var(--text2)">'+e[0]+'</span>';
+    h += '<span style="font-size:13px;color:var(--text2)">'+capEsc(e[0])+'</span>';
     h += '<div style="display:flex;align-items:center;gap:8px">';
     h += '<div style="width:60px;background:var(--bg3);border-radius:4px;height:4px"><div style="height:100%;border-radius:4px;background:var(--blue);width:'+pct+'%"></div></div>';
     h += '<span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text3);min-width:20px;text-align:right">'+e[1]+'</span>';
@@ -5551,7 +6049,7 @@ function drawCapAnalise(root) {
   topMarcas.forEach(function(m){
     var pct = total > 0 ? Math.round((m[1]/total)*100) : 0;
     h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    h += '<span style="font-size:13px;color:var(--text2)">'+m[0]+'</span>';
+    h += '<span style="font-size:13px;color:var(--text2)">'+capEsc(m[0])+'</span>';
     h += '<div style="display:flex;align-items:center;gap:8px">';
     h += '<div style="width:60px;background:var(--bg3);border-radius:4px;height:4px"><div style="height:100%;border-radius:4px;background:var(--green);width:'+pct+'%"></div></div>';
     h += '<span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text3);min-width:20px;text-align:right">'+m[1]+'</span>';
@@ -5566,7 +6064,7 @@ function drawCapAnalise(root) {
   h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
   topTipos.forEach(function(t){
     h += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:12px">';
-    h += '<span style="color:var(--text2)">'+t[0]+'</span> <span style="font-family:DM Mono,monospace;color:var(--text3)">'+t[1]+'</span>';
+    h += '<span style="color:var(--text2)">'+capEsc(t[0])+'</span> <span style="font-family:DM Mono,monospace;color:var(--text3)">'+t[1]+'</span>';
     h += '</div>';
   });
   h += '</div></div>';
