@@ -5053,7 +5053,7 @@ window.buscarPorCPF = function() {
 // ===== MIGRAR BIKE DA CAPTAÇÃO PARA O ESTOQUE =====
 window.capMigrarEstoque=async function(id){
   // capData é global (definida no script externo)
-  const b=(window.capData||[]).find(x=>x.id===id);
+  const b=(window.capData||[]).find(x=>String(x.id)===String(id));
   if(!b){alert('Bike não encontrada.');return;}
 
   const jaExiste=bikes.find(bk=>bk.captacaoId===String(id));
@@ -5125,7 +5125,7 @@ let capData = [];
 let capFilter = 'todos';
 let capDetalhe = null;
 let capLoaded = false;
-let _capUltimoCount = null;
+let _capUltimoId = null;
 
 async function sbFetch(path, opts) {
   opts = opts || {};
@@ -5193,11 +5193,26 @@ async function capDelete(id) {
 window.loadCapData = loadCapData;
 
 const CAP_COLORS = {novo:'var(--amber)',em_analise:'var(--blue)',aprovado:'var(--green)',reprovado:'var(--red)',vendido:'var(--purple)'};
+const CAP_LABELS = {novo:'Novo',em_analise:'Em análise',aprovado:'Aprovado',reprovado:'Reprovado',vendido:'Vendido'};
 
-let capData = [];
-let capFilter = 'todos';
-let capDetalhe = null;
-let capLoaded = false;
+// Compara IDs ignorando tipo (os botões passam o ID como texto; o Supabase pode devolver número)
+function capSameId(a, b) { return String(a) === String(b); }
+
+// Filtro clicável nos cards de métricas (ex.: "+30 dias")
+function capSetFilter(elem) {
+  capFilter = (elem && elem.getAttribute('data-filter')) || 'todos';
+  capDetalhe = null;
+  capSubTab = 'lista';
+  drawCap();
+}
+
+// Alterna entre as sub-abas: 0 = Submissões (lista), 1 = Análise
+function capSetSubTab(i) {
+  capSubTab = (i === 1 || i === 'analise') ? 'analise' : 'lista';
+  capDetalhe = null;
+  drawCap();
+}
+
 let _capDescAtual = '';
 
 function capCalcCom(p) { var v=Number(p||0); return Math.min(Math.max(v*0.10,800),5000); }
@@ -5205,57 +5220,12 @@ function capDias(d) { return d ? Math.floor((new Date()-new Date(d))/86400000) :
 function capFmtR(v) { return 'R$ '+Math.round(Number(v)).toLocaleString('pt-BR'); }
 function capFmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'; }
 
-async function sbFetch(path, opts) {
-  opts = opts || {};
-  var res = await fetch(SB_URL+path, {
-    method: opts.method || 'GET',
-    headers: Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'}, opts.headers||{}),
-    body: opts.body
-  });
-  if (res.status === 204 || res.status === 200 && opts.method === 'DELETE') return {};
-  try { return await res.json(); } catch(e) { return {}; }
-}
-
-async function loadCapData() {
-  var root = document.getElementById('captacao-root');
-  if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-family:DM Mono,monospace">carregando...</div>';
-  var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
-  capData = Array.isArray(data) ? data : [];
-  capLoaded = true;
-  var novos = capData.filter(function(b){return b.status==='novo';}).length;
-  var el = document.getElementById('count-captacao');
-  if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
-  drawCap();
-}
-
-async function capUpdateStatus(id, status) {
-  await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'PATCH', body:JSON.stringify({status:status})});
-  var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
-  capData = Array.isArray(data) ? data : [];
-  var novos = capData.filter(function(b){return b.status==='novo';}).length;
-  var el = document.getElementById('count-captacao');
-  if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
-  capDetalhe = id;
-  drawCap();
-}
-
-async function capDelete(id) {
-  if (!confirm('Excluir este envio? Essa ação não pode ser desfeita.')) return;
-  await sbFetch('/rest/v1/submissoes?id=eq.'+id, {method:'DELETE'});
-  capDetalhe = null;
-  await loadCapData();
-}
-
-function capDias(dataStr){
-  if(!dataStr)return 0;
-  return Math.floor((new Date()-new Date(dataStr))/86400000);
-}
 
 function drawCap() {
   var root = document.getElementById('captacao-root');
   if (!root) return;
   if (capDetalhe) {
-    var b = capData.find(function(x){return x.id===capDetalhe;});
+    var b = capData.find(function(x){return capSameId(x.id, capDetalhe);});
     if (b) { root.innerHTML = drawCapDetalhe(b); return; }
     capDetalhe = null;
   }
@@ -5605,13 +5575,6 @@ function drawCapAnalise(root) {
 }
 
 // Push notifications
-function capRequestNotifPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}
-
-
 function capRequestNotifPermission(){
   if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
 }
@@ -5625,12 +5588,14 @@ async function capChecarNovas() {
   try {
     var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=id,status,marca,modelo,nome&limit=1');
     if (!Array.isArray(data) || data.length === 0) return;
-    var novas = data.filter(function(b){ return b.status === 'novo'; });
-    if (_capUltimoCount === null) { _capUltimoCount = novas.length; return; }
-    if (novas.length > _capUltimoCount) {
-      var b = data[0];
-      capSendNotif('Nova bike recebida! 🚲', (b.marca||'')+ ' ' +(b.modelo||'')+' — '+(b.nome||''));
-      _capUltimoCount = novas.length;
+    // Compara o ID do envio mais recente (antes comparava uma contagem que só podia ser 0 ou 1)
+    var b = data[0];
+    if (_capUltimoId === null) { _capUltimoId = b.id; return; }
+    if (b.id !== _capUltimoId) {
+      _capUltimoId = b.id;
+      if (b.status === 'novo') {
+        capSendNotif('Nova bike recebida! 🚲', (b.marca||'')+ ' ' +(b.modelo||'')+' — '+(b.nome||''));
+      }
       await loadCapData();
     }
   } catch(e) {}
