@@ -144,11 +144,12 @@ exports.handler = async (event) => {
   let produtoId = '';
   let produtoNovo = false;
   let urlLoja = '';
+  let seoUri = '';
 
   // Já publicado antes: atualiza o mesmo produto (evita duplicar)
   if (produtoAtual) {
     const r = await li('PUT', '/v1/produto/' + produtoAtual, dadosProduto);
-    if (r.ok) { produtoId = produtoAtual; urlLoja = (r.dados && r.dados.url) || ''; }
+    if (r.ok) { produtoId = produtoAtual; urlLoja = (r.dados && r.dados.url) || ''; seoUri = (r.dados && r.dados.seo) || ''; }
     else if (r.status !== 404) return json(502, { erro: 'A loja recusou a atualização: ' + erroLi(r) });
     // 404 = o produto foi apagado no admin da loja; cria de novo abaixo
   }
@@ -160,6 +161,7 @@ exports.handler = async (event) => {
     produtoId = String(r.dados.id);
     produtoNovo = true;
     urlLoja = r.dados.url || '';
+    seoUri = r.dados.seo || '';
     if (Array.isArray(r.dados.categorias) && r.dados.categorias.length === 0) {
       avisos.push('A loja não gravou a categoria; confira no admin.');
     }
@@ -183,6 +185,29 @@ exports.handler = async (event) => {
   });
   if (!re.ok) avisos.push('Estoque não gravado: ' + erroLi(re));
 
+  // SEO (título e descrição para o Google). A loja guarda num recurso próprio: /v1/seo/<id>
+  let seoOk = false;
+  const seoTitulo = String(b.seo_titulo || '').trim() || tituloLoja(b).slice(0, 70);
+  const seoDescricao = String(b.seo_descricao || '').trim();
+  if (!seoUri) { const pd = await li('GET', '/v1/produto/' + produtoId); seoUri = (pd.dados && pd.dados.seo) || ''; }
+  const seoId = String(seoUri).replace(/\/+$/, '').split('/').pop();
+  if (seoId && /^\d+$/.test(seoId)) {
+    const atual = await li('GET', '/v1/seo/' + seoId);
+    if (atual.ok && atual.dados && typeof atual.dados === 'object') {
+      const chaves = Object.keys(atual.dados);
+      const achar = (opcoes) => opcoes.find((c) => chaves.includes(c));
+      const corpoSeo = {};
+      const kTitulo = achar(['title', 'titulo', 'seo_title']);
+      const kDescricao = achar(['description', 'descricao', 'seo_description']);
+      if (kTitulo) corpoSeo[kTitulo] = seoTitulo;
+      if (kDescricao && seoDescricao) corpoSeo[kDescricao] = seoDescricao;
+      if (Object.keys(corpoSeo).length) {
+        const rs = await li('PUT', '/v1/seo/' + seoId, corpoSeo);
+        if (rs.ok) seoOk = true; else avisos.push('SEO não gravado: ' + erroLi(rs));
+      } else avisos.push('SEO: a loja usa outros nomes de campo (' + chaves.join(', ') + '). Me mande este aviso.');
+    } else avisos.push('SEO: não consegui ler o SEO do produto (HTTP ' + atual.status + ').');
+  } else avisos.push('SEO: o produto não informou o recurso de SEO.');
+
   // Fotos: só envia se o produto ainda não tem nenhuma (evita duplicar ao republicar)
   let enviarFotos = produtoNovo;
   if (!produtoNovo) {
@@ -192,21 +217,34 @@ exports.handler = async (event) => {
     if (!enviarFotos) avisos.push('Fotos não foram reenviadas (o produto já tem fotos). Para trocar, ajuste no admin da loja.');
   }
   let fotosOk = 0;
+  const enviarFoto = (url, pos) => li('POST', '/v1/produto_imagem/', {
+    produto: '/api/v1/produto/' + produtoId,
+    imagem_url: url,
+    principal: pos === 0,
+    posicao: pos,
+  });
   if (enviarFotos) {
-    // Em lotes de 3, para caber no tempo limite da função
-    for (let i = 0; i < fotos.length; i += 3) {
-      const lote = fotos.slice(i, i + 3).map((url, j) => li('POST', '/v1/produto_imagem/', {
-        produto: '/api/v1/produto/' + produtoId,
-        imagem_url: url,
-        principal: i + j === 0,
-        posicao: i + j,
-      }));
-      const res = await Promise.all(lote);
+    // 1) A capa vai sozinha e primeiro, para a loja registrá-la como foto principal
+    const capa = await enviarFoto(fotos[0], 0);
+    if (capa.ok) fotosOk++;
+    else avisos.push('Foto 1 (capa) não enviada: ' + erroLi(capa));
+    // 2) As demais em lotes de 3, para caber no tempo limite da função
+    for (let i = 1; i < fotos.length; i += 3) {
+      const res = await Promise.all(fotos.slice(i, i + 3).map((url, j) => enviarFoto(url, i + j)));
       res.forEach((r, j) => {
         if (r.ok) fotosOk++;
         else avisos.push('Foto ' + (i + j + 1) + ' não enviada: ' + erroLi(r));
       });
     }
+  }
+
+  // Confere a capa: se o produto ficou sem foto principal, marca a de menor posição
+  const ri2 = await li('GET', '/v1/produto_imagem/?produto=' + produtoId + '&limit=50');
+  const imagens = (ri2.ok && ri2.dados && Array.isArray(ri2.dados.objects)) ? ri2.dados.objects : [];
+  if (imagens.length && !imagens.some((x) => x.principal === true || x.principal === 'true')) {
+    const primeira = imagens.slice().sort((a, b) => Number(a.posicao) - Number(b.posicao))[0];
+    const rp = await li('PUT', '/v1/produto_imagem/' + primeira.id, { principal: true });
+    if (!rp.ok) avisos.push('A loja ficou sem foto de capa e não consegui marcar automaticamente (' + erroLi(rp) + '). Marque a capa no admin da loja.');
   }
 
   return json(200, {
@@ -216,6 +254,7 @@ exports.handler = async (event) => {
     ativo: ativo,
     url: urlLoja,
     fotos_enviadas: fotosOk,
+    seo: seoOk,
     avisos: avisos,
   });
 };
