@@ -5858,7 +5858,8 @@ async function capBuscarFotosUma(id) {
   try {
     var r = await capBuscarFotosDrive(id, function(n, t){ capAvisoLoja('📷 Copiando fotos do Drive: ' + n + ' de ' + t + '...'); });
     capAvisoLoja('');
-    var msg = r.n ? '✅ ' + r.n + ' foto(s) copiada(s) do Drive. A primeira virou a capa; reordene em ✏️ Editar anúncio, se precisar.' : '⚠️ Nenhuma foto encontrada na pasta.';
+    var msg = r.n ? '✅ ' + r.n + ' foto(s) copiada(s) do Drive. A primeira virou a capa; reordene em ✏️ Editar anúncio, se precisar.'
+      : (r.falhas.length ? '❌ As fotos foram encontradas no Drive, mas nenhuma pôde ser gravada no painel.' : '⚠️ Nenhuma foto encontrada na pasta.');
     if (r.pulados.length) msg += '\n\nIgnoradas (formato que a loja não aceita ou muito grandes):\n• ' + r.pulados.join('\n• ');
     if (r.falhas.length) msg += '\n\nFalharam:\n• ' + r.falhas.join('\n• ');
     alert(msg);
@@ -5879,8 +5880,9 @@ async function capBuscarFotosLote(ids) {
     var nome = b ? [b.marca, b.modelo].join(' ') + ' (cód. ' + b.codigo_externo + ')' : ids[i];
     try {
       var r = await capBuscarFotosDrive(ids[i], function(n, t){ capAvisoLoja('📷 Bike ' + (i + 1) + ' de ' + ids.length + ' · foto ' + n + ' de ' + t); });
-      if (r.n) ok++; else problemas.push(nome + ': pasta sem fotos');
-      if (r.falhas.length) problemas.push(nome + ': ' + r.falhas.length + ' foto(s) falharam');
+      if (r.n) ok++;
+      else if (!r.falhas.length) problemas.push(nome + ': pasta sem fotos' + (r.pulados.length ? ' (só ' + r.pulados.slice(0, 2).join(', ') + ')' : ''));
+      if (r.falhas.length) problemas.push(nome + ': ' + r.falhas.length + ' foto(s) falharam — ' + r.falhas[0]);
     } catch (e) { problemas.push(nome + ': ' + e.message); }
   }
   capAvisoLoja('');
