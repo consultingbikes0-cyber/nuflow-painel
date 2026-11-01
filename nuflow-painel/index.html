@@ -6115,7 +6115,7 @@ function capGerarDescricao(b) {
   var nomeBike = [b.marca, b.modelo, b.ano].filter(Boolean).join(' ').trim();
   var destaques = linhas.filter(function(l){ return /^(suspens|transmiss)/i.test(l.rotulo); }).map(function(l){ return l.valor.split(/[,;(]/)[0].trim(); });
   var ups = linhas.filter(function(l){ return l.upgrade; }).map(function(l){ return l.rotulo.toLowerCase(); });
-  var abertura = nomeBike + (b.cor ? ', cor ' + String(b.cor).trim().toLowerCase() : '') + (b.tamanho ? ', tamanho ' + String(b.tamanho).trim() : '') + (destaques.length ? ', com ' + destaques.join(' e ') : '') + '.' +
+  var abertura = b.abertura && String(b.abertura).trim() ? String(b.abertura).trim() : nomeBike + (b.cor ? ', cor ' + String(b.cor).trim().toLowerCase() : '') + (b.tamanho ? ', tamanho ' + String(b.tamanho).trim() : '') + (destaques.length ? ', com ' + destaques.join(' e ') : '') + '.' +
     (ups.length ? ' Recebeu upgrade de ' + (ups.length > 1 ? ups.slice(0, -1).join(', ') + ' e ' + ups[ups.length - 1] : ups[0]) + '.' : '');
 
   var condTxt = b.observacoes ? e(b.observacoes) : (sense ? 'Bike em ótimo estado, conforme avaliação da Sense.' : 'Bike seminova em bom estado geral, conforme informado pelo vendedor. Estado confirmado no laudo técnico antes da entrega.');
@@ -6363,6 +6363,7 @@ async function capPublicarLoja(id, automatico) {
     capAvisoLoja('');
     var msg = (r.novo ? '✅ Publicado na loja' : '✅ Anúncio atualizado na loja') + ' (produto ' + r.produto_id + ').';
     if (r.novo) msg += '\n' + r.fotos_enviadas + ' foto(s) enviada(s).';
+    if (r.seo) msg += '\nSEO (título e descrição para o Google) gravado.';
     if (!r.ativo) msg += '\n\nEle está DESATIVADO para você conferir no admin da loja (Catálogo > Produtos) e ativar.';
     if (r.url) msg += '\n\nEndereço: ' + r.url;
     if (r.avisos && r.avisos.length) msg += '\n\n⚠️ Atenção:\n• ' + r.avisos.join('\n• ');
@@ -6446,7 +6447,10 @@ var CAP_CAMPOS_EDIT = [
   ['suspensao', 'Suspensão', 'text'], ['shock', 'Amortecedor', 'text'], ['freios', 'Freios', 'text'],
   ['relacao', 'Transmissão', 'text'], ['rodas', 'Rodas', 'text'],
   ['outros_componentes', 'Outros itens da ficha · um por linha, "Item: modelo" (ex.: Canote: RockShox Reverb 150mm). Escreva (upgrade) para destacar', 'textarea'],
-  ['observacoes', 'Condição da bike (aparece no anúncio)', 'textarea']
+  ['observacoes', 'Condição da bike (aparece no anúncio)', 'textarea'],
+  ['abertura', 'Abertura do anúncio (frase inicial; em branco = montada a partir da ficha)', 'textarea'],
+  ['seo_titulo', 'SEO · título para o Google (até 60 caracteres)', 'text'],
+  ['seo_descricao', 'SEO · descrição para o Google (até 155 caracteres)', 'textarea']
 ];
 
 function capAbrirEdicao(id) {
@@ -6559,33 +6563,59 @@ async function capUploadFotos(id, input) {
 
 function capLerCampo(col) { var el = document.getElementById('cap-ed-' + col); return el ? el.value.trim() : ''; }
 
-// ✨ Padronizar com IA: reorganiza o texto do vendedor na ficha padrão. Só preenche os campos
-// da tela; nada é salvo até você clicar em "Salvar alterações".
+// ✨ Padronizar com IA: pesquisa a ficha oficial da bike na internet, junta com o que o vendedor
+// informou e preenche ficha, abertura e SEO na tela. A pesquisa roda em segundo plano no Netlify
+// (leva de 30s a 2min); nada é salvo no anúncio até você clicar em "Salvar alterações".
+var capIaOcupado = false;
 async function capPadronizarIA() {
+  if (capIaOcupado) return;
+  var id = capDetalhe; var b = capBike(id); if (!b) return;
   var btn = document.getElementById('cap-ia-btn'), msg = document.getElementById('cap-ia-msg');
-  var mostrar = function(t, cor){ if (msg) { msg.style.display = t ? 'block' : 'none'; msg.style.color = cor || 'var(--text2)'; msg.textContent = t; } };
+  var mostrar = function(html, cor){ msg = document.getElementById('cap-ia-msg'); if (msg) { msg.style.display = html ? 'block' : 'none'; msg.style.color = cor || 'var(--text2)'; msg.innerHTML = html; } };
   var dados = {};
   CAP_CAMPOS_EDIT.forEach(function(c){ dados[c[0]] = capLerCampo(c[0]); });
+  dados.condicao_origem = b.condicao_origem || '';
   var tok = await sbToken();
   if (!tok) { if (window.nfShowLogin) window.nfShowLogin('Sua sessão expirou. Entre novamente.'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = '✨ Padronizando...'; }
-  mostrar('Organizando o texto do vendedor... (até 20s)');
+  capIaOcupado = true;
+  if (btn) { btn.disabled = true; btn.textContent = '✨ Pesquisando...'; }
+  var inicio = Date.now();
+  mostrar('🔎 Pesquisando a ficha oficial da bike na internet e montando o anúncio... (de 30s a 2 min; pode continuar nesta tela)');
   try {
-    var res = await fetch('/.netlify/functions/padronizar-anuncio', {
+    var res = await fetch('/.netlify/functions/pesquisar-bike-background', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-      body: JSON.stringify({ dados: dados })
+      body: JSON.stringify({ id: id, dados: dados })
     });
-    var j = {}; try { j = await res.json(); } catch (e) {}
-    if (!res.ok || !j.campos) throw new Error(j.erro || ('HTTP ' + res.status));
-    Object.keys(j.campos).forEach(function(col){
+    if (res.status !== 202 && !res.ok) throw new Error('a pesquisa não foi iniciada (HTTP ' + res.status + ')');
+    // Acompanha o resultado gravado pela função (até 4 minutos)
+    var r = null;
+    while (Date.now() - inicio < 240000) {
+      await new Promise(function(ok){ setTimeout(ok, 4000); });
+      var seg = Math.round((Date.now() - inicio) / 1000);
+      if (btn) btn.textContent = '✨ Pesquisando... ' + seg + 's';
+      var linhas = await sbFetch('/rest/v1/submissoes?select=ia_status,ia_resultado,ia_erro,ia_em&id=eq.' + encodeURIComponent(id));
+      var x = Array.isArray(linhas) && linhas[0];
+      if (!x || !x.ia_em || new Date(x.ia_em).getTime() < inicio - 5000) continue; // resultado antigo
+      if (x.ia_status === 'erro') throw new Error(x.ia_erro || 'erro na pesquisa');
+      if (x.ia_status === 'pronto' && x.ia_resultado) { r = x.ia_resultado; break; }
+    }
+    if (!r) throw new Error('a pesquisa demorou demais. Tente de novo em alguns minutos.');
+    if (!capEditando || !capSameId(capDetalhe, id)) { capIaOcupado = false; alert('A pesquisa da IA terminou, mas a tela de edição foi fechada. Abra a edição e clique em ✨ de novo.'); return; }
+    var c = r.campos || {};
+    Object.keys(c).forEach(function(col){
       var el = document.getElementById('cap-ed-' + col);
-      if (el && typeof j.campos[col] === 'string') el.value = j.campos[col];
+      if (el && typeof c[col] === 'string' && (c[col] || !el.value)) el.value = c[col];
     });
-    mostrar('✅ Campos reorganizados. Revise, corrija o que precisar e clique em "Salvar alterações". Nada foi salvo ainda.' +
-      (j.descartados && j.descartados.length ? ' Removido da ficha: ' + j.descartados.join(', ') + '.' : ''), 'var(--green)');
-  } catch (e) {
-    mostrar('❌ Não foi possível padronizar: ' + e.message, 'var(--red)');
+    var e = capEsc;
+    var html = '✅ Anúncio montado. Revise os campos e clique em "Salvar alterações" (nada foi salvo ainda).';
+    if (r.completados_web && r.completados_web.length) html += '<br>🌐 Completado com a ficha oficial: <b>' + e(r.completados_web.join(', ')) + '</b>. Confira se bate com a bike.';
+    if (r.observacao) html += '<br>⚠️ ' + e(r.observacao);
+    if (r.fontes && r.fontes.length) html += '<br>Fontes: ' + r.fontes.map(function(f){ return '<a href="' + e(f.url) + '" target="_blank" rel="noopener" style="color:var(--teal)">' + e(f.titulo || f.url) + '</a>'; }).join(' · ');
+    mostrar(html, 'var(--green)');
+  } catch (err) {
+    mostrar('❌ Não foi possível pesquisar: ' + capEsc(err.message), 'var(--red)');
   }
+  capIaOcupado = false;
   if (btn) { btn.disabled = false; btn.textContent = '✨ Padronizar com IA'; }
 }
 function capAtualizarCom() {
