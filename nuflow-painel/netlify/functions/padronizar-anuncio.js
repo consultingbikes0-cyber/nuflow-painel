@@ -40,7 +40,9 @@ COMO PREENCHER CADA ITEM
 - condicao: 1 a 3 frases sobre o estado da bike segundo o vendedor (marcas de uso, arranhões, revisões, peças novas), em terceira pessoa, sem repetir a ficha técnica e sem exagero de marketing. Se o vendedor não falou do estado, devolva "".
 - descartados: lista curta do que você tirou da ficha por não interessar ao comprador (ex.: "selim", "movimento central").
 
-DESCARTE SEMPRE: selim, manoplas, pedais, caixa de direção, movimento central, corrente, abraçadeiras, textos de marketing do fabricante, preço.`;
+DESCARTE SEMPRE: selim, manoplas, pedais, caixa de direção, movimento central, corrente, abraçadeiras, textos de marketing do fabricante, preço.
+
+FORMATO DA RESPOSTA: sempre chame a ferramenta "ficha", sem texto antes ou depois. Se por algum motivo não puder usar a ferramenta, responda apenas com um objeto JSON com os mesmos campos.`;
 
 const FERRAMENTA = {
   name: 'ficha',
@@ -93,8 +95,8 @@ exports.handler = async (event) => {
         temperature: 0,
         system: INSTRUCOES,
         tools: [FERRAMENTA],
-        tool_choice: { type: 'tool', name: 'ficha' },
-        messages: [{ role: 'user', content: 'Texto enviado pelo vendedor (campo: valor):\n\n' + texto }],
+        tool_choice: { type: 'auto' },
+        messages: [{ role: 'user', content: 'Texto enviado pelo vendedor (campo: valor):\n\n' + texto + '\n\nResponda chamando a ferramenta "ficha".' }],
       }),
     });
   } catch (e) {
@@ -102,9 +104,16 @@ exports.handler = async (event) => {
   }
   const resp = await r.json().catch(() => ({}));
   if (!r.ok) return json(502, { erro: 'A IA recusou o pedido: ' + ((resp.error && resp.error.message) || ('HTTP ' + r.status)) });
-  const uso = (resp.content || []).find((c) => c.type === 'tool_use');
-  if (!uso || !uso.input) return json(502, { erro: 'A IA não devolveu a ficha.' });
-  const f = uso.input;
+  // Normalmente vem pela ferramenta; se vier como texto, aproveita o JSON do texto
+  let f = null;
+  const uso = (resp.content || []).find((c) => c.type === 'tool_use' && c.name === 'ficha');
+  if (uso && uso.input) f = uso.input;
+  else {
+    const txt = (resp.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (m) { try { f = JSON.parse(m[0]); } catch (e) { f = null; } }
+  }
+  if (!f || typeof f !== 'object') return json(502, { erro: 'A IA não devolveu a ficha. Tente de novo.' });
 
   // Converte para os campos do painel
   const extras = ITENS.filter(([k]) => limpa(f[k])).map(([k, rotulo]) => rotulo + ': ' + limpa(f[k]));
