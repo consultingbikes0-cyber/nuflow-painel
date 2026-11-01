@@ -6,9 +6,9 @@
 //   LI_TESTE_SENHA  -> uma senha qualquer, só para proteger este teste
 //
 // Uso:
-//   Etapa 1 (só leitura):  /.netlify/functions/li-teste?senha=SUA_SENHA
-//   Etapa 2 (cria produto DESATIVADO com 1 foto):
-//                          /.netlify/functions/li-teste?senha=SUA_SENHA&criar=1&foto=URL_DA_FOTO
+//   Leitura:            ?senha=SUA_SENHA
+//   Testar foto em produto JÁ EXISTENTE (não cria produto novo):
+//                       ?senha=SUA_SENHA&pid=ID_DO_PRODUTO&foto=URL_DA_FOTO
 
 const BASE = 'https://api.awsli.com.br';
 
@@ -52,67 +52,36 @@ exports.handler = async (event) => {
     }
   }
 
-  const out = {};
-
-  // ---------- ETAPA 1: autenticação, categorias, marcas, exemplo de produto (só leitura) ----------
-  const cat = await chamar('GET', '/v1/categoria/?limit=100');
-  out['1_autenticacao'] = cat.status === 200 ? 'OK' : `FALHOU (HTTP ${cat.status})`;
-  if (cat.status !== 200) {
-    out.detalhe = cat.dados;
-    return resposta(200, out);
-  }
-
-  out['2_categorias'] = (cat.dados.objects || []).map((c) => ({
-    id: c.id,
-    nome: c.nome,
-    categoria_pai: c.categoria_pai || null,
-  }));
-
-  const marcas = await chamar('GET', '/v1/marca/?limit=100');
-  out['3_marcas'] = marcas.status === 200
-    ? (marcas.dados.objects || []).map((m) => ({ id: m.id, nome: m.nome }))
-    : { status: marcas.status, detalhe: marcas.dados };
-
-  // Um produto já existente, para ver o formato exato dos campos
-  const lista = await chamar('GET', '/v1/produto/?limit=1');
-  const exemplo = lista.status === 200 ? (lista.dados.objects || [])[0] : null;
-  out['4_exemplo_produto'] = exemplo || { status: lista.status, detalhe: lista.dados };
-
-  if (exemplo && exemplo.id) {
-    const det = await chamar('GET', `/v1/produto/${exemplo.id}/`);
-    out['4b_exemplo_produto_detalhe'] = det.dados;
-    const imgs = await chamar('GET', `/v1/produto_imagem/?produto=${exemplo.id}`);
-    out['4c_exemplo_imagens'] = imgs.dados;
-  }
-
-  // ---------- ETAPA 2 (opcional): cria produto de teste DESATIVADO + 1 foto por URL ----------
-  if (q.criar === '1') {
-    const prod = await chamar('POST', '/v1/produto/', {
-      sku: 'TESTE-NUFLOW-' + Date.now(),
-      nome: 'TESTE NUFLOW - NAO COMPRAR',
-      descricao_completa: '<p>Produto de teste da integração. Pode apagar.</p>',
-      ativo: false,
-      destaque: false,
-      tipo: 'normal',
-      usado: true,
-      peso: 15,
-      altura: 80,
-      largura: 25,
-      profundidade: 140,
-    });
-    out['5_criar_produto'] = { status: prod.status, resposta: prod.dados };
-
-    const pid = prod.dados && prod.dados.id;
-    if (pid && q.foto) {
-      const img = await chamar('POST', '/v1/produto_imagem/', {
-        produto: `/api/v1/produto/${pid}/`,
+  // ---------- MODO FOTO: testa formatos de referência num produto existente ----------
+  if (q.pid) {
+    if (!q.foto) return resposta(400, { erro: 'Falta o parâmetro foto=URL' });
+    const pid = String(q.pid).replace(/\D/g, '');
+    const formatos = [
+      `/api/v1/produto/${pid}`,
+      `/v1/produto/${pid}`,
+      Number(pid),
+      String(pid),
+    ];
+    const tentativas = [];
+    for (const ref of formatos) {
+      const r = await chamar('POST', '/v1/produto_imagem/', {
+        produto: ref,
         imagem_url: q.foto,
         principal: true,
-        posicao: 1,
+        posicao: 0,
       });
-      out['6_enviar_foto_por_url'] = { status: img.status, resposta: img.dados };
+      tentativas.push({ formato_produto: ref, status: r.status, resposta: r.dados });
+      if (r.status === 200 || r.status === 201) {
+        return resposta(200, { resultado: 'FOTO ENVIADA', formato_que_funcionou: ref, tentativas });
+      }
     }
+    return resposta(200, { resultado: 'NENHUM FORMATO FUNCIONOU', tentativas });
   }
 
+  // ---------- MODO LEITURA ----------
+  const out = {};
+  const cat = await chamar('GET', '/v1/categoria/?limit=100');
+  out['1_autenticacao'] = cat.status === 200 ? 'OK' : `FALHOU (HTTP ${cat.status})`;
+  if (cat.status !== 200) out.detalhe = cat.dados;
   return resposta(200, out);
 };
