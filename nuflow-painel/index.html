@@ -5561,26 +5561,93 @@ function capTituloLoja(b) {
   return partes.join(' - ').replace(/\s+/g, ' ');
 }
 
+// ---------- Ficha técnica do anúncio ----------
+// Ordem fixa das linhas. Itens que não interessam ao comprador são descartados.
+var CAP_ORDEM_FICHA = ['quadro', 'suspensao', 'amortecedor', 'freios', 'transmissao', 'rodas', 'pneus', 'canote', 'cockpit', 'motor', 'bateria', 'uso'];
+var CAP_DESCARTAR = /^(selim|manopla|pedal|caixa de dire|movimento central|corrente|abra[cç]adeira)/i;
+// Reconhece o item pelo começo do texto quando o vendedor não usou "Item: modelo"
+var CAP_PREFIXOS = [
+  [/^canote( retr[aá]til)?\s*/i, 'Canote'], [/^(guid[aã]o|mesa|cockpit)\b\s*/i, 'Cockpit'],
+  [/^pneus?\b\s*/i, 'Pneus'], [/^quadro\b\s*/i, 'Quadro'], [/^motor\b\s*/i, 'Motor'], [/^bateria\b\s*/i, 'Bateria']
+];
+function capSemAcento(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+
+// Lê o campo de extras. Formato recomendado: um item por linha, "Item: modelo".
+function capExtrasFicha(txt) {
+  txt = String(txt || '').trim();
+  if (!txt) return [];
+  var partes = (/[\n;]/.test(txt) || txt.indexOf(':') >= 0) ? txt.split(/\n|;/) : txt.split(',');
+  var out = [];
+  partes.forEach(function(p){
+    p = p.trim().replace(/^[-•·*]\s*/, '');
+    if (!p) return;
+    var rotulo = '', valor = p;
+    var m = p.match(/^([^:]{2,30}):\s*(.+)$/);
+    if (m) { rotulo = m[1].trim(); valor = m[2].trim(); }
+    else {
+      for (var i = 0; i < CAP_PREFIXOS.length; i++) {
+        if (CAP_PREFIXOS[i][0].test(p)) {
+          rotulo = CAP_PREFIXOS[i][1];
+          // Tira o nome do item do começo ("Canote retrátil X" → "X"); no cockpit mantém "Guidão"/"Mesa"
+          valor = rotulo === 'Cockpit' ? p : (p.replace(CAP_PREFIXOS[i][0], '').trim() || p);
+          break;
+        }
+      }
+    }
+    if (CAP_DESCARTAR.test(rotulo || p)) return;
+    out.push([rotulo || 'Extra', valor]);
+  });
+  return out;
+}
+
+// Linhas da ficha: { rotulo, valor, upgrade }. "(upgrade)" no texto vira o selo UPGRADE.
+function capLinhasFicha(b) {
+  var brutas = [['Suspensão', b.suspensao], ['Amortecedor', b.shock], ['Freios', b.freios], ['Transmissão', b.relacao], ['Rodas', b.rodas]]
+    .filter(function(x){ return x[1] && String(x[1]).trim(); })
+    .concat(capExtrasFicha(b.outros_componentes));
+  var porRotulo = {}, linhas = [];
+  brutas.forEach(function(x){
+    var valor = String(x[1]).trim();
+    var upgrade = /\bupgrade\b/i.test(valor);
+    valor = valor.replace(/\s*[\(\[]?\s*upgrade\s*[\)\]]?/ig, '').replace(/\s{2,}/g, ' ').replace(/[\s,;-]+$/, '').trim();
+    if (!valor) return;
+    var chave = capSemAcento(x[0]);
+    if (porRotulo[chave]) { // ex.: guidão e mesa na mesma linha "Cockpit"
+      porRotulo[chave].valor += ' + ' + valor;
+      porRotulo[chave].upgrade = porRotulo[chave].upgrade || upgrade;
+      return;
+    }
+    porRotulo[chave] = { rotulo: x[0], valor: valor, upgrade: upgrade };
+    linhas.push(porRotulo[chave]);
+  });
+  linhas.sort(function(a, c){
+    var ia = CAP_ORDEM_FICHA.indexOf(capSemAcento(a.rotulo)), ic = CAP_ORDEM_FICHA.indexOf(capSemAcento(c.rotulo));
+    return (ia < 0 ? 50 : ia) - (ic < 0 ? 50 : ic);
+  });
+  if (b.tamanho) linhas.push({ rotulo: 'Tamanho', valor: String(b.tamanho).trim(), upgrade: false });
+  return linhas;
+}
+
 // ---------- Descrição do anúncio (HTML que vai para a loja) ----------
 // Sem preço (o preço fica só no campo da loja, para não desatualizar) e com a localização da bike.
 function capGerarDescricao(b) {
   var e = capEsc;
-  var tam = b.tamanho || '';
   var titulo = capTituloLoja(b);
   var tipoLabel = b.tipo ? String(b.tipo).toUpperCase() : 'MTB';
   var local = [String(b.cidade || '').trim(), String(b.estado || '').trim().toUpperCase()].filter(Boolean).join(' - ');
 
-  var comp = [];
-  if (b.suspensao) comp.push(['Suspensão', b.suspensao]);
-  if (b.shock) comp.push(['Amortecedor', b.shock]);
-  if (b.freios) comp.push(['Freios', b.freios]);
-  if (b.relacao) comp.push(['Transmissão', b.relacao]);
-  if (b.rodas) comp.push(['Rodas', b.rodas]);
-  if (tam) comp.push(['Tamanho', tam]);
-  if (b.outros_componentes) String(b.outros_componentes).split(/[,;\n]+/).forEach(function(t){ t = t.trim(); if (t) comp.push([t, '']); });
-  var rows = comp.map(function(c, i){
-    return '\n    <tr' + (i > 0 ? ' style="border-top:1px solid #eeeeee;"' : '') + '>\n      <td style="padding:6px 0;color:#888888;width:160px;vertical-align:top;font-size:12px;">' + e(c[0]) + '</td>\n      <td style="padding:6px 0;color:#111111;font-weight:600;">' + e(c[1]) + '</td>\n    </tr>';
+  var linhas = capLinhasFicha(b);
+  var selo = '<span style="display:inline-block;background:#c8ff00;color:#202d18;font-size:9px;font-weight:700;letter-spacing:1px;padding:2px 6px;border-radius:2px;margin-left:8px;vertical-align:middle;">UPGRADE</span>';
+  var rows = linhas.map(function(c, i){
+    return '\n    <tr' + (i > 0 ? ' style="border-top:1px solid #eeeeee;"' : '') + '>\n      <td style="padding:6px 0;color:#888888;width:140px;vertical-align:top;font-size:12px;">' + e(c.rotulo) + '</td>\n      <td style="padding:6px 0;color:#111111;font-weight:600;">' + e(c.valor) + (c.upgrade ? selo : '') + '</td>\n    </tr>';
   }).join('');
+
+  // Abertura factual, montada só com o que está na ficha (sem frase de marketing genérica)
+  var nomeBike = [b.marca, b.modelo, b.ano].filter(Boolean).join(' ').trim();
+  var destaques = linhas.filter(function(l){ return /^(suspens|transmiss)/i.test(l.rotulo); }).map(function(l){ return l.valor.split(/[,;(]/)[0].trim(); });
+  var ups = linhas.filter(function(l){ return l.upgrade; }).map(function(l){ return l.rotulo.toLowerCase(); });
+  var abertura = nomeBike + (b.tamanho ? ', tamanho ' + String(b.tamanho).trim() : '') + (destaques.length ? ', com ' + destaques.join(' e ') : '') + '.' +
+    (ups.length ? ' Recebeu upgrade de ' + (ups.length > 1 ? ups.slice(0, -1).join(', ') + ' e ' + ups[ups.length - 1] : ups[0]) + '.' : '');
 
   var condTxt = b.observacoes ? e(b.observacoes) : 'Bike seminova em bom estado geral, conforme informado pelo vendedor. Estado confirmado no laudo técnico antes da entrega.';
 
@@ -5588,7 +5655,7 @@ function capGerarDescricao(b) {
 '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;color:#1a1a1a;background:#ffffff;padding:0;">\n' +
 '  <p style="font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#111111;margin:0 0 8px 0;padding:20px 20px 0 20px;">' + e(titulo) + '</p>\n' +
 '  <p style="margin:0 0 16px 0;padding:0 20px;"><span style="display:inline-block;background:#202d18;color:#c8ff00;font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:3px 10px;border-radius:2px;">' + e(tipoLabel) + ' · Seminova</span></p>\n' +
-'  <p style="font-size:14px;color:#444444;line-height:1.7;margin:0 0 20px 0;padding:0 20px;">Uma das bikes mais desejadas do mercado, selecionada pela curadoria Nuflow. Pronta para trilhas, viagens e pedaladas de alto nível.</p>\n' +
+'  <p style="font-size:14px;color:#444444;line-height:1.7;margin:0 0 20px 0;padding:0 20px;">' + e(abertura) + '</p>\n' +
 '  <div style="background:#f8f8f8;border:2px solid #111111;margin:0 0 2px 0;padding:12px 20px;">\n' +
 '    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 12px 0;">Componentes em Destaque</p>\n' +
 '    <table style="width:100%;border-collapse:collapse;font-size:13px;"><tbody>' + rows + '\n    </tbody></table>\n' +
@@ -5884,7 +5951,7 @@ var CAP_CAMPOS_EDIT = [
   ['tamanho', 'Tamanho', 'text'], ['tipo', 'Tipo / modalidade', 'text'],
   ['suspensao', 'Suspensão', 'text'], ['shock', 'Amortecedor', 'text'], ['freios', 'Freios', 'text'],
   ['relacao', 'Transmissão', 'text'], ['rodas', 'Rodas', 'text'],
-  ['outros_componentes', 'Extras (separe por vírgula)', 'textarea'],
+  ['outros_componentes', 'Outros itens da ficha · um por linha, "Item: modelo" (ex.: Canote: RockShox Reverb 150mm). Escreva (upgrade) para destacar', 'textarea'],
   ['observacoes', 'Condição da bike (aparece no anúncio)', 'textarea']
 ];
 
@@ -5911,13 +5978,15 @@ function drawCapEditar(b) {
     '</div>');
 
   // Dados e componentes
-  h += capCard('Bike e componentes', '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">' +
+  h += capCard('Bike e componentes', '<div id="cap-ia-msg" style="font-size:13px;margin-bottom:.75rem;display:none"></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">' +
     CAP_CAMPOS_EDIT.map(function(c){
       var v = capEsc(b[c[0]] || '');
       var full = c[2] === 'textarea' ? 'grid-column:1/-1;' : '';
       return '<div class="fg" style="' + full + '"><label>' + c[1] + '</label>' +
-        (c[2] === 'textarea' ? '<textarea id="cap-ed-' + c[0] + '" rows="3">' + v + '</textarea>' : '<input id="cap-ed-' + c[0] + '" value="' + v + '">') + '</div>';
-    }).join('') + '</div>');
+        (c[2] === 'textarea' ? '<textarea id="cap-ed-' + c[0] + '" rows="' + (c[0] === 'outros_componentes' ? 6 : 3) + '">' + v + '</textarea>' : '<input id="cap-ed-' + c[0] + '" value="' + v + '">') + '</div>';
+    }).join('') + '</div>',
+    '<button class="btn btn-sm btn-teal" id="cap-ia-btn" onclick="capPadronizarIA()">✨ Padronizar com IA</button>');
 
   // Fotos
   h += capCard('Fotos (' + capEditFotos.length + ') · a primeira é a capa', '<div id="cap-ed-fotos">' + drawCapEditFotos() + '</div>',
@@ -5986,6 +6055,36 @@ async function capUploadFotos(id, input) {
 }
 
 function capLerCampo(col) { var el = document.getElementById('cap-ed-' + col); return el ? el.value.trim() : ''; }
+
+// ✨ Padronizar com IA: reorganiza o texto do vendedor na ficha padrão. Só preenche os campos
+// da tela; nada é salvo até você clicar em "Salvar alterações".
+async function capPadronizarIA() {
+  var btn = document.getElementById('cap-ia-btn'), msg = document.getElementById('cap-ia-msg');
+  var mostrar = function(t, cor){ if (msg) { msg.style.display = t ? 'block' : 'none'; msg.style.color = cor || 'var(--text2)'; msg.textContent = t; } };
+  var dados = {};
+  CAP_CAMPOS_EDIT.forEach(function(c){ dados[c[0]] = capLerCampo(c[0]); });
+  var tok = await sbToken();
+  if (!tok) { if (window.nfShowLogin) window.nfShowLogin('Sua sessão expirou. Entre novamente.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '✨ Padronizando...'; }
+  mostrar('Organizando o texto do vendedor... (até 20s)');
+  try {
+    var res = await fetch('/.netlify/functions/padronizar-anuncio', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+      body: JSON.stringify({ dados: dados })
+    });
+    var j = {}; try { j = await res.json(); } catch (e) {}
+    if (!res.ok || !j.campos) throw new Error(j.erro || ('HTTP ' + res.status));
+    Object.keys(j.campos).forEach(function(col){
+      var el = document.getElementById('cap-ed-' + col);
+      if (el && typeof j.campos[col] === 'string') el.value = j.campos[col];
+    });
+    mostrar('✅ Campos reorganizados. Revise, corrija o que precisar e clique em "Salvar alterações". Nada foi salvo ainda.' +
+      (j.descartados && j.descartados.length ? ' Removido da ficha: ' + j.descartados.join(', ') + '.' : ''), 'var(--green)');
+  } catch (e) {
+    mostrar('❌ Não foi possível padronizar: ' + e.message, 'var(--red)');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '✨ Padronizar com IA'; }
+}
 function capAtualizarCom() {
   var el = document.getElementById('cap-ed-com'); if (!el) return;
   var p = capNum(capLerCampo('preco_venda'));
