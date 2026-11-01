@@ -10,3 +10,6 @@
 
 [functions."publicar-loja"]
   timeout = 26
+
+[functions."padronizar-anuncio"]
+  timeout = 26
