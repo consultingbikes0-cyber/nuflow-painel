@@ -17,6 +17,7 @@ const SB_URL = 'https://zwoxvbzspdjssuqltgox.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b3h2YnpzcGRqc3N1cWx0Z294Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDgxNTAsImV4cCI6MjA5MjM4NDE1MH0.IxXj3NhabrA7ln5c_So8u9DXWJ_PlKRgBUav0g4NDNQ';
 
 const CATEGORIA_BRASIL = '/api/v1/categoria/24074516'; // SEMINOVAS > NUFLOW BIKES BRASIL
+const CATEGORIA_SENSE = '/api/v1/categoria/24074365';  // SEMINOVAS > SEMINOVAS DE FÁBRICA SENSE
 const MAX_FOTOS = 15;
 // Medidas da caixa de bike (cm / kg). A loja exige para cálculo de frete.
 const CAIXA = { peso: 18, altura: 80, largura: 25, profundidade: 145 };
@@ -27,9 +28,9 @@ function json(status, obj) {
 
 function up(v) { return String(v || '').trim().toUpperCase(); }
 
-// Mesmo padrão dos anúncios da loja: "MARCA MODELO - TAMANHO X - ANO - UF"
+// Mesmo padrão dos anúncios da loja: "MARCA MODELO COR - TAMANHO X - ANO - UF"
 function tituloLoja(b) {
-  const partes = [(up(b.marca) + ' ' + up(b.modelo)).trim()];
+  const partes = [[up(b.marca), up(b.modelo), up(b.cor)].filter(Boolean).join(' ')];
   if (b.tamanho) partes.push('TAMANHO ' + up(b.tamanho));
   if (b.ano) partes.push(String(b.ano).trim());
   if (b.estado) partes.push(up(b.estado));
@@ -130,8 +131,9 @@ exports.handler = async (event) => {
     nome: tituloLoja(b),
     descricao_completa: b.descricao_gerada,
     ativo: ativo,
-    usado: true,
-    categorias: [CATEGORIA_BRASIL],
+    // Bikes da Sense marcadas como NOVA na planilha vão como produto novo
+    usado: !(b.origem === 'sense' && b.condicao_origem === 'NOVA'),
+    categorias: [b.origem === 'sense' ? CATEGORIA_SENSE : CATEGORIA_BRASIL],
     peso: CAIXA.peso,
     altura: CAIXA.altura,
     largura: CAIXA.largura,
