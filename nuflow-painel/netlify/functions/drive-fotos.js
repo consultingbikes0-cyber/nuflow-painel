@@ -63,6 +63,8 @@ exports.handler = async (event) => {
 
   // Copia o lote atual para o Supabase
   const pastaDestino = 'sense/' + String(b.codigo_externo || b.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+  // Nome sempre novo (com a hora): o armazenamento só permite gravar arquivo novo, não substituir
+  const carimbo = Date.now();
   const lote = imagens.slice(inicio, inicio + LOTE);
   const urls = [];
   const falhas = [];
@@ -73,10 +75,10 @@ exports.handler = async (event) => {
       const d = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&supportsAllDrives=true&key=${chave}`);
       if (!d.ok) throw new Error('download HTTP ' + d.status);
       const bytes = Buffer.from(await d.arrayBuffer());
-      const caminho = `${pastaDestino}/${String(n).padStart(2, '0')}_${f.id}.${TIPOS[f.mimeType]}`;
+      const caminho = `${pastaDestino}/${carimbo}_${String(n).padStart(2, '0')}_${f.id}.${TIPOS[f.mimeType]}`;
       const up = await fetch(`${SB_URL}/storage/v1/object/bike-photos/${caminho}`, {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': f.mimeType, 'x-upsert': 'true' }, sbHeaders),
+        headers: Object.assign({ 'Content-Type': f.mimeType, 'x-upsert': 'false' }, sbHeaders),
         body: bytes,
       });
       if (!up.ok) { const t = await up.text(); throw new Error('upload HTTP ' + up.status + ' ' + t.slice(0, 120)); }
