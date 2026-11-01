@@ -47,6 +47,7 @@ FORMATO DA RESPOSTA: sempre chame a ferramenta "ficha", sem texto antes ou depoi
 const FERRAMENTA = {
   name: 'ficha',
   description: 'Devolve a ficha técnica padronizada da bike.',
+  strict: true,
   input_schema: {
     type: 'object',
     properties: {
@@ -57,6 +58,7 @@ const FERRAMENTA = {
       condicao: { type: 'string' },
       descartados: { type: 'array', items: { type: 'string' } },
     },
+    additionalProperties: false,
     required: ['quadro', 'suspensao', 'amortecedor', 'freios', 'transmissao', 'rodas', 'pneus', 'canote', 'cockpit', 'motor', 'bateria', 'uso', 'condicao', 'descartados'],
   },
 };
@@ -91,8 +93,7 @@ exports.handler = async (event) => {
       headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
         model: MODELO,
-        max_tokens: 1500,
-        temperature: 0,
+        max_tokens: 4000,
         system: INSTRUCOES,
         tools: [FERRAMENTA],
         tool_choice: { type: 'auto' },
