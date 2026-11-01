@@ -28,14 +28,14 @@ function json(status, obj) {
 
 function up(v) { return String(v || '').trim().toUpperCase(); }
 
-// Mesmo padrão dos anúncios da loja: "MARCA MODELO COR - TAMANHO X - ANO - UF"
+// Mesmo padrão dos anúncios da loja: "MARCA MODELO VERSÃO - TAMANHO X - ANO"
 function tituloLoja(b) {
-  const partes = [[up(b.marca), up(b.modelo), up(b.cor)].filter(Boolean).join(' ')];
+  const partes = [[up(b.marca), up(b.modelo)].filter(Boolean).join(' ')];
   if (b.tamanho) partes.push('TAMANHO ' + up(b.tamanho));
   if (b.ano) partes.push(String(b.ano).trim());
-  if (b.estado) partes.push(up(b.estado));
   return partes.join(' - ').replace(/\s+/g, ' ').slice(0, 200);
 }
+const ID_CATEGORIA_SENSE = CATEGORIA_SENSE.split('/').pop();
 
 function listaFotos(b) {
   let f = b && b.fotos;
@@ -67,14 +67,6 @@ exports.handler = async (event) => {
   try { corpo = JSON.parse(event.body || '{}'); } catch (e) { return json(400, { erro: 'Corpo inválido.' }); }
   const id = corpo.id;
   const acao = corpo.acao;
-  if (!id || (acao !== 'publicar' && acao !== 'desativar')) return json(400, { erro: 'Informe id e acao (publicar ou desativar).' });
-
-  // ---------- 2. Lê o envio ----------
-  const rs = await fetch(SB_URL + '/rest/v1/submissoes?select=*&id=eq.' + encodeURIComponent(id), { headers: sbHeaders });
-  if (!rs.ok) return json(502, { erro: 'Não consegui ler o envio no Supabase (HTTP ' + rs.status + ').' });
-  const linhas = await rs.json();
-  const b = Array.isArray(linhas) ? linhas[0] : null;
-  if (!b) return json(404, { erro: 'Envio não encontrado.' });
 
   // ---------- Cliente da Loja Integrada ----------
   const liHeaders = { Authorization: 'Basic ' + liToken, 'Content-Type': 'application/json', Accept: 'application/json' };
@@ -93,6 +85,44 @@ exports.handler = async (event) => {
     if (d && typeof d === 'object') return (d.error_message || '') + ' ' + JSON.stringify(d.error || d).slice(0, 300);
     return String(d).slice(0, 300);
   }
+  const naCategoriaSense = (p) => Array.isArray(p.categorias) && p.categorias.some((c) => String(c).replace(/\/+$/, '').split('/').pop() === ID_CATEGORIA_SENSE);
+
+  // ---------- LISTAR_SENSE: anúncios ativos da categoria Seminovas de Fábrica Sense ----------
+  if (acao === 'listar_sense') {
+    const achados = [];
+    let caminho = '/v1/produto/?limit=50&removido=false';
+    for (let pagina = 0; pagina < 40 && caminho; pagina++) {
+      const r = await li('GET', caminho);
+      if (!r.ok || !r.dados || !Array.isArray(r.dados.objects)) return json(502, { erro: 'Não consegui listar os produtos da loja: ' + erroLi(r) });
+      r.dados.objects.forEach((p) => {
+        if (!p.removido && p.ativo && naCategoriaSense(p)) achados.push({ id: p.id, nome: p.nome, sku: p.sku, url: p.url });
+      });
+      const prox = r.dados.meta && r.dados.meta.next;
+      caminho = prox ? String(prox).replace(/^https?:\/\/[^/]+/, '').replace(/^\/api/, '') : '';
+    }
+    return json(200, { ok: true, produtos: achados });
+  }
+
+  // ---------- DESATIVAR_PRODUTO: tira do ar um anúncio da categoria Sense que não está no painel ----------
+  if (acao === 'desativar_produto') {
+    const pid = String(corpo.produto_id || '').replace(/\D/g, '');
+    if (!pid) return json(400, { erro: 'Informe produto_id.' });
+    const atual = await li('GET', '/v1/produto/' + pid);
+    if (!atual.ok) return json(502, { erro: 'Produto não encontrado na loja: ' + erroLi(atual) });
+    if (!naCategoriaSense(atual.dados || {})) return json(403, { erro: 'Por segurança, só desativo por aqui anúncios da categoria Seminovas de Fábrica Sense.' });
+    const r = await li('PUT', '/v1/produto/' + pid, { ativo: false });
+    if (!r.ok) return json(502, { erro: 'A loja recusou a desativação: ' + erroLi(r) });
+    return json(200, { ok: true, produto_id: Number(pid), ativo: false });
+  }
+
+  if (!id || (acao !== 'publicar' && acao !== 'desativar')) return json(400, { erro: 'Informe id e acao (publicar ou desativar).' });
+
+  // ---------- 2. Lê o envio ----------
+  const rs = await fetch(SB_URL + '/rest/v1/submissoes?select=*&id=eq.' + encodeURIComponent(id), { headers: sbHeaders });
+  if (!rs.ok) return json(502, { erro: 'Não consegui ler o envio no Supabase (HTTP ' + rs.status + ').' });
+  const linhas = await rs.json();
+  const b = Array.isArray(linhas) ? linhas[0] : null;
+  if (!b) return json(404, { erro: 'Envio não encontrado.' });
 
   const produtoAtual = b.loja_produto_id ? String(b.loja_produto_id).replace(/\D/g, '') : '';
 
