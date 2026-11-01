@@ -5579,8 +5579,31 @@ async function capImportarArquivo(input) {
     });
     var sairam = Object.keys(existentes)
       .filter(function(c){ var s = existentes[c].status; return !noArquivo[c] && s !== 'vendido' && s !== 'reprovado'; })
-      .map(function(c){ return { bike: existentes[c], marcar: false }; });
-    capImport = { arquivo: f.name, novos: novos, precoMudou: precoMudou, sairam: sairam, iguais: iguais, avisos: r.avisos };
+      .map(function(c){ return { bike: existentes[c], marcar: true }; });
+
+    // 2) Conferência com a loja: anúncios ativos da categoria Sense que o painel não conhece
+    var loja = [];
+    try {
+      capAvisoLoja('🛒 Conferindo os anúncios da Sense na loja...');
+      var rl = await capChamarLojaExtra({ acao: 'listar_sense' });
+      var vinculados = {};
+      capData.forEach(function(b){ if (b.loja_produto_id) vinculados[String(b.loja_produto_id)] = 1; });
+      var soltos = (rl.produtos || []).filter(function(p){ return !vinculados[String(p.id)]; });
+      var usados = {};
+      soltos.forEach(function(p){
+        var cands = senseCandidatos(p.nome, r.linhas).filter(function(l){ var ex = existentes[l.codigo_externo]; return !(ex && ex.loja_produto_id); });
+        var item = { produto: p, possiveis: cands.map(function(l){ return l.codigo_externo; }), sugestao: cands.length === 1 ? cands[0] : null };
+        if (item.sugestao) usados[item.sugestao.codigo_externo] = (usados[item.sugestao.codigo_externo] || 0) + 1;
+        loja.push(item);
+      });
+      loja.forEach(function(it){
+        if (it.sugestao && usados[it.sugestao.codigo_externo] > 1) it.sugestao = null; // dois anúncios para a mesma bike: decidir à mão
+        it.acao = it.sugestao ? 'vincular' : (it.possiveis.length ? 'nada' : 'desativar');
+      });
+    } catch (e) {
+      r.avisos.push('Não consegui conferir os anúncios da loja: ' + e.message);
+    }
+    capImport = { arquivo: f.name, novos: novos, precoMudou: precoMudou, sairam: sairam, loja: loja, iguais: iguais, avisos: r.avisos };
     capAvisoLoja('');
     capDetalhe = null; capEditando = false;
     drawCap(); window.scrollTo(0, 0);
@@ -5589,6 +5612,30 @@ async function capImportarArquivo(input) {
     alert('Não foi possível ler a planilha: ' + e.message);
   }
 }
+
+async function capChamarLojaExtra(corpo) {
+  var tok = await sbToken();
+  if (!tok) throw new Error('Sessão expirada');
+  var res = await fetch('/.netlify/functions/publicar-loja', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(corpo)
+  });
+  var j = {}; try { j = await res.json(); } catch (e) {}
+  if (!res.ok || !j.ok) throw new Error(j.erro || ('HTTP ' + res.status));
+  return j;
+}
+// Linhas da planilha que combinam com o título de um anúncio da loja (modelo, tamanho e ano)
+function senseCandidatos(titulo, linhas) {
+  var t = ' ' + String(titulo || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9.]+/g, ' ') + ' ';
+  return linhas.filter(function(l){
+    var palavras = (l.marca + ' ' + l.modelo).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9.]+/g, ' ').trim().split(' ');
+    if (!palavras.every(function(w){ return t.indexOf(' ' + w + ' ') >= 0; })) return false;
+    var tam = String(l.tamanho || '').toUpperCase().replace(/\s+/g, '');
+    if (tam && t.indexOf(' TAMANHO ' + tam + ' ') < 0) return false;
+    if (l.ano && /\b20\d\d\b/.test(t) && t.indexOf(' ' + l.ano + ' ') < 0) return false;
+    return true;
+  });
+}
+function capImportAcaoLoja(i, valor) { if (capImport && capImport.loja[i]) capImport.loja[i].acao = valor; }
 
 function capImportMarcar(grupo, i, valor) {
   if (!capImport) return;
@@ -5607,7 +5654,7 @@ function drawCapImport(root) {
   var h = '<div style="margin-bottom:1.25rem"><button class="btn btn-sm" onclick="capImportFechar()">← Cancelar importação</button></div>';
   h += '<div style="font-size:22px;font-weight:600">Importar planilha da Sense</div>';
   h += '<div style="font-size:13px;color:var(--text3);margin:4px 0 1.5rem;font-family:DM Mono,monospace">' + e(im.arquivo) + ' · ' +
-    im.novos.length + ' nova(s) · ' + im.precoMudou.length + ' com preço novo · ' + im.sairam.length + ' fora da planilha · ' + im.iguais + ' sem mudança</div>';
+    im.novos.length + ' nova(s) · ' + im.precoMudou.length + ' com preço novo · ' + im.sairam.length + ' fora da planilha · ' + (im.loja ? im.loja.length : 0) + ' na loja fora do painel · ' + im.iguais + ' sem mudança</div>';
 
   if (im.avisos.length) {
     h += '<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:var(--radius);padding:.75rem 1.25rem;margin-bottom:1.25rem;font-size:13px;color:var(--amber)">' +
@@ -5652,9 +5699,28 @@ function drawCapImport(root) {
   h += secao('Não estão mais na planilha', 'sairam', im.sairam, function(x){
     return '<div style="font-weight:500">' + e([x.bike.marca, x.bike.modelo, x.bike.ano].filter(Boolean).join(' ')) + ' <span style="color:var(--text3);font-family:DM Mono,monospace;font-size:11px">cód. ' + e(x.bike.codigo_externo) + '</span></div>' +
       '<div style="font-size:12px;color:var(--text2);margin-top:2px">Status: ' + e(CAP_LABELS[x.bike.status] || x.bike.status) + (x.bike.loja_produto_id ? ' · está na loja' : '') + '</div>';
-  }, 'Provavelmente vendidas pela Sense. As marcadas viram "Vendida" e saem do ar na loja.');
+  }, 'Provavelmente vendidas pela Sense. Já vêm marcadas: viram "Vendida" e saem do ar na loja. Desmarque as que ainda estão à venda.');
 
-  if (!im.novos.length && !im.precoMudou.length && !im.sairam.length) {
+  if (im.loja && im.loja.length) {
+    var sl = '<div style="background:var(--bg2);border:1px solid var(--amber);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
+    sl += '<div style="font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:.5rem">Anúncios da Sense na loja que não estão no painel (' + im.loja.length + ')</div>';
+    sl += '<div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Foram cadastrados direto na loja. <b>Vincular</b> liga o anúncio à bike da planilha (evita anúncio duplicado ao aprovar). <b>Tirar do ar</b> desativa o anúncio (não apaga; dá para reativar no admin da loja).</div>';
+    im.loja.forEach(function(it, i){
+      var p = it.produto;
+      var opcoes = '';
+      if (it.sugestao) opcoes += '<option value="vincular"' + (it.acao === 'vincular' ? ' selected' : '') + '>Vincular ao cód. ' + e(it.sugestao.codigo_externo) + ' (mesma bike na planilha)</option>';
+      opcoes += '<option value="desativar"' + (it.acao === 'desativar' ? ' selected' : '') + '>Tirar do ar (não está na planilha)</option>';
+      opcoes += '<option value="nada"' + (it.acao === 'nada' ? ' selected' : '') + '>Não fazer nada agora</option>';
+      sl += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:.75rem 0;border-top:1px solid var(--border)">' +
+        '<div style="flex:1;min-width:220px"><div style="font-weight:500">' + e(p.nome) + '</div>' +
+        '<div style="font-size:12px;color:var(--text3);margin-top:2px">produto ' + e(p.id) + (p.url ? ' · <a href="' + e(p.url) + '" target="_blank" rel="noopener" style="color:var(--teal)">ver no site ↗</a>' : '') +
+        (!it.sugestao && it.possiveis.length ? ' · <span style="color:var(--amber)">pode ser cód. ' + e(it.possiveis.join(', ')) + ' (mais de uma igual: abra a bike certa no painel e use "🔗 Já está na loja? Vincular" com o produto ' + e(p.id) + ')</span>' : '') + '</div></div>' +
+        '<select class="btn btn-sm" style="max-width:100%" onchange="capImportAcaoLoja(' + i + ',this.value)">' + opcoes + '</select></div>';
+    });
+    h += sl + '</div>';
+  }
+
+  if (!im.novos.length && !im.precoMudou.length && !im.sairam.length && !(im.loja && im.loja.length)) {
     h += '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Nada novo nesta planilha: tudo já está no painel.</div></div>';
   } else {
     h += '<div id="cap-imp-msg" style="font-size:13px;margin-bottom:.75rem"></div>';
@@ -5668,8 +5734,11 @@ async function capImportConfirmar() {
   var novos = im.novos.filter(function(x){ return x.marcar; });
   var precos = im.precoMudou.filter(function(x){ return x.marcar; });
   var sairam = im.sairam.filter(function(x){ return x.marcar; });
-  if (!novos.length && !precos.length && !sairam.length) { alert('Nada marcado.'); return; }
-  if (!confirm('Aplicar: ' + novos.length + ' bike(s) nova(s), ' + precos.length + ' mudança(s) de preço, ' + sairam.length + ' marcada(s) como vendida?')) return;
+  var vincular = (im.loja || []).filter(function(x){ return x.acao === 'vincular' && x.sugestao; });
+  var desligar = (im.loja || []).filter(function(x){ return x.acao === 'desativar'; });
+  if (!novos.length && !precos.length && !sairam.length && !vincular.length && !desligar.length) { alert('Nada marcado.'); return; }
+  if (!confirm('Aplicar: ' + novos.length + ' bike(s) nova(s), ' + precos.length + ' mudança(s) de preço, ' + sairam.length + ' marcada(s) como vendida, ' +
+    vincular.length + ' anúncio(s) da loja vinculado(s) e ' + desligar.length + ' anúncio(s) tirado(s) do ar?')) return;
   var btn = document.getElementById('cap-imp-btn'), msg = document.getElementById('cap-imp-msg');
   var mostrar = function(t, cor){ if (msg) { msg.style.color = cor || 'var(--text2)'; msg.textContent = t; } };
   if (btn) btn.disabled = true;
@@ -5698,7 +5767,10 @@ async function capImportConfirmar() {
     for (var j = 0; j < precos.length; j++) {
       mostrar('Atualizando preços ' + (j + 1) + ' de ' + precos.length + '...');
       try {
-        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(precos[j].bike.id), { method: 'PATCH', body: JSON.stringify({ preco_venda: precos[j].linha.preco, preco_pedido: precos[j].linha.preco, atualizado_em: new Date().toISOString() }) });
+        var novoPreco = { preco_venda: precos[j].linha.preco, preco_pedido: precos[j].linha.preco };
+        novoPreco.descricao_gerada = capGerarDescricao(Object.assign({}, precos[j].bike, novoPreco)); // o preço aparece na descrição
+        novoPreco.atualizado_em = new Date().toISOString();
+        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(precos[j].bike.id), { method: 'PATCH', body: JSON.stringify(novoPreco) });
         if (precos[j].bike.loja_produto_id && precos[j].bike.status === 'aprovado') atualizarLoja.push(precos[j].bike.id);
       } catch (e) { erros.push('Preço do cód. ' + precos[j].linha.codigo_externo + ': ' + e.message); }
     }
@@ -5720,6 +5792,23 @@ async function capImportConfirmar() {
       mostrar('Tirando da loja ' + (d + 1) + ' de ' + desativar.length + '...');
       try { await capChamarLoja('desativar', desativar[d]); } catch (e) { erros.push('Loja (desativar): ' + e.message); }
     }
+    // 5. Anúncios da loja cadastrados fora do painel
+    if (vincular.length) {
+      var atuais = await sbFetch('/rest/v1/submissoes?select=id,codigo_externo,origem&origem=eq.sense');
+      for (var v = 0; v < vincular.length; v++) {
+        mostrar('Vinculando anúncios da loja ' + (v + 1) + ' de ' + vincular.length + '...');
+        var alvo = (atuais || []).find(function(b){ return String(b.codigo_externo) === String(vincular[v].sugestao.codigo_externo); });
+        if (!alvo) { erros.push('Vincular cód. ' + vincular[v].sugestao.codigo_externo + ': a bike não foi importada (marque-a entre as novas).'); continue; }
+        try {
+          await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(alvo.id), { method: 'PATCH', body: JSON.stringify({ loja_produto_id: vincular[v].produto.id, status: 'aprovado', publicado_em: new Date().toISOString(), atualizado_em: new Date().toISOString() }) });
+        } catch (e) { erros.push('Vincular cód. ' + vincular[v].sugestao.codigo_externo + ': ' + e.message); }
+      }
+    }
+    for (var q = 0; q < desligar.length; q++) {
+      mostrar('Tirando do ar anúncios fora da planilha ' + (q + 1) + ' de ' + desligar.length + '...');
+      try { await capChamarLojaExtra({ acao: 'desativar_produto', produto_id: desligar[q].produto.id }); }
+      catch (e) { erros.push('Tirar do ar "' + desligar[q].produto.nome + '": ' + e.message); }
+    }
   } catch (e) {
     mostrar('❌ Erro: ' + e.message, 'var(--red)');
     if (btn) btn.disabled = false;
@@ -5727,7 +5816,9 @@ async function capImportConfirmar() {
   }
   capImport = null;
   await loadCapData();
-  var resumo = '✅ Importação concluída.\n\n' + novos.length + ' bike(s) nova(s), ' + precos.length + ' preço(s) atualizado(s), ' + sairam.length + ' marcada(s) como vendida.';
+  var resumo = '✅ Importação concluída.\n\n' + novos.length + ' bike(s) nova(s), ' + precos.length + ' preço(s) atualizado(s), ' + sairam.length + ' marcada(s) como vendida, ' +
+    vincular.length + ' anúncio(s) vinculado(s), ' + desligar.length + ' anúncio(s) tirado(s) do ar.';
+  if (vincular.length) resumo += '\n\nAs bikes vinculadas ficaram como "Aprovado" com o anúncio que já existia. Quando quiser deixá-las no padrão novo (título, descrição, SEO), abra cada uma e use "🔄 Atualizar na loja".';
   if (erros.length) resumo += '\n\n⚠️ Problemas:\n• ' + erros.join('\n• ');
   alert(resumo);
   var semFotos = capData.filter(function(b){ return b.origem === 'sense' && b.fotos_link && !capFotos(b).length && b.status !== 'vendido' && b.status !== 'reprovado'; });
@@ -6018,13 +6109,12 @@ async function capSalvar(id, campos) {
 }
 
 // ---------- Título do anúncio (mesmo padrão da loja) ----------
-// "MARCA MODELO COR - TAMANHO X - ANO - UF". A função publicar-loja usa a mesma regra.
+// "MARCA MODELO VERSÃO - TAMANHO X - ANO" (padrão dos anúncios da loja). A função publicar-loja usa a mesma regra.
 function capTituloLoja(b) {
   var up = function(v){ return String(v || '').trim().toUpperCase(); };
-  var partes = [[up(b.marca), up(b.modelo), up(b.cor)].filter(Boolean).join(' ')];
+  var partes = [[up(b.marca), up(b.modelo)].filter(Boolean).join(' ')];
   if (b.tamanho) partes.push('TAMANHO ' + up(b.tamanho));
   if (b.ano) partes.push(String(b.ano).trim());
-  if (b.estado) partes.push(up(b.estado));
   return partes.join(' - ').replace(/\s+/g, ' ');
 }
 
@@ -6096,7 +6186,7 @@ function capLinhasFicha(b) {
 }
 
 // ---------- Descrição do anúncio (HTML que vai para a loja) ----------
-// Sem preço (o preço fica só no campo da loja, para não desatualizar) e com a localização da bike.
+// Com preço (a descrição é refeita sempre que o anúncio é salvo, aprovado ou o preço muda pela planilha).
 function capGerarDescricao(b) {
   var e = capEsc;
   var titulo = capTituloLoja(b);
@@ -6135,6 +6225,15 @@ function capGerarDescricao(b) {
 '    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 4px 0;">✅ Laudo técnico antes da entrega</p>\n' +
 '    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Antes de seguir para você, esta bike passa por um laudo técnico completo na Nuflow: quadro, suspensões, freios, transmissão e rodas. Qualquer ajuste necessário é feito nesse momento, pouco antes do envio. Assim ela chega pronta para pedalar, sem o desgaste de ficar parada depois da revisão.</p>\n' +
 '  </div>\n';
+  var precoN = capPrecoSite(b);
+  var fmtBR = function(v){ return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var blocoPreco = !precoN ? '' :
+'    <p style="font-size:11px;color:#888888;letter-spacing:1px;text-transform:uppercase;margin:0 0 4px 0;">Preço</p>\n' +
+'    <p style="font-size:26px;font-weight:900;color:#202d18;margin:0 0 4px 0;font-family:monospace;">' + fmtBR(precoN) + '</p>\n' +
+(sense ?
+'    <p style="font-size:13px;color:#202d18;font-weight:700;margin:0 0 2px 0;">ou 12x de ' + fmtBR(Math.round(precoN / 12 * 100) / 100) + ' sem juros</p>\n' +
+'    <p style="font-size:13px;color:#202d18;font-weight:700;margin:0 0 12px 0;">🚚 Frete grátis para todo o Brasil</p>\n'
+: '    <div style="height:8px"></div>\n');
   var rodapeCta = sense ? 'Garantia Sense + 12x sem juros + frete grátis' : 'Laudo técnico antes da entrega + curadoria Nuflow + entrega nacional';
 
   return '<!--NUFLOW BIKES - DESCRICAO DE PRODUTO PREMIUM-->\n' +
@@ -6157,6 +6256,7 @@ function capGerarDescricao(b) {
 '  </div>\n' : '') +
 blocoGarantia +
 '  <div style="background:#f8f8f8;border-top:2px solid #202d18;margin:2px 0 0 0;padding:16px 20px;">\n' +
+blocoPreco +
 '    <div style="background:#202d18;padding:10px 16px;border-radius:3px;display:inline-block;">\n' +
 '      <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#ffffff;margin:0 0 2px 0;">COMPRA SOMENTE PELO WHATSAPP</p>\n' +
 '      <p style="font-size:11px;color:rgba(255,255,255,0.65);margin:0;">' + rodapeCta + '</p>\n' +
@@ -6275,6 +6375,7 @@ function drawCapDetalhe(b) {
   if (st === 'aprovado') h += '<button class="btn btn-sm" style="color:var(--purple);border-color:var(--purple-dim)" onclick="capMudarStatus(\x27' + bid + '\x27,\x27vendido\x27)">💰 Vendida</button>';
   if (st === 'aprovado') h += '<button class="btn btn-sm btn-teal" onclick="capPublicarLoja(\x27' + bid + '\x27,false)">' + (b.loja_produto_id ? '🔄 Atualizar na loja' : '🛒 Publicar na loja') + '</button>';
   if (st !== 'aprovado' && b.loja_produto_id) h += '<button class="btn btn-sm" onclick="capDesativarLoja(\x27' + bid + '\x27,false)">🚫 Tirar da loja</button>';
+  if (!b.loja_produto_id && st !== 'vendido' && st !== 'reprovado') h += '<button class="btn btn-sm" onclick="capVincularLoja(\x27' + bid + '\x27)">🔗 Já está na loja? Vincular</button>';
   if (wppNum) {
     var msgOk = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e temos interesse! Podemos conversar?');
     var msgNao = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
@@ -6373,6 +6474,20 @@ async function capPublicarLoja(id, automatico) {
     alert('❌ Não foi possível publicar na loja: ' + e.message + '\n\nO status no painel foi salvo. Tente de novo pelo botão "🛒 Publicar na loja".');
   }
   capLojaOcupado = false;
+  await capRecarregarCap(id);
+}
+
+// Liga um envio a um anúncio que já existe na loja (cadastrado à mão), para não duplicar ao aprovar
+async function capVincularLoja(id) {
+  var v = prompt('Número do produto na Loja Integrada (aparece no endereço do produto no admin da loja, ou na importação da planilha):');
+  if (v === null) return;
+  var pid = String(v).replace(/\D/g, '');
+  if (!pid) { alert('Informe só o número do produto.'); return; }
+  if (capData.some(function(x){ return !capSameId(x.id, id) && String(x.loja_produto_id) === pid; })) { alert('Esse produto da loja já está vinculado a outra bike do painel.'); return; }
+  try {
+    await capSalvar(id, { loja_produto_id: Number(pid), status: 'aprovado', publicado_em: new Date().toISOString() });
+    alert('🔗 Vinculado ao produto ' + pid + '. A bike ficou como "Aprovado". Use "🔄 Atualizar na loja" quando quiser aplicar o padrão novo ao anúncio.');
+  } catch (e) { alert('Não foi possível vincular: ' + e.message); }
   await capRecarregarCap(id);
 }
 
