@@ -228,7 +228,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 </header>
 
 <div class="tabs-bar">
-  <button class="tab active" onclick="switchTab('estoque')" id="tab-btn-estoque">Estoque <span class="tab-count" id="count-estoque">0</span></button>
+  <button class="tab active" onclick="switchTab(window._estSub||'estoque')" id="tab-btn-estoque">📦 Estoque <span class="tab-count" id="count-estoque-total">0</span></button>
   <button class="tab" onclick="switchTab('vendidas')" id="tab-btn-vendidas">Vendidas <span class="tab-count" id="count-vendidas">0</span></button>
   <button class="tab" onclick="switchTab('bikecheck')" id="tab-btn-bikecheck">Bike Check <span class="tab-count" id="count-bikecheck">0</span></button>
   <button class="tab" onclick="switchTab('analise')" id="tab-btn-analise">Análise</button>
@@ -236,8 +236,6 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <button class="tab" onclick="switchTab('dre')" id="tab-btn-dre">DRE</button>
   <button class="tab" onclick="switchTab('financeiro')" id="tab-btn-financeiro">Financeiro</button>
   <button class="tab" onclick="switchTab('nova')" id="tab-btn-nova">+ Cadastrar</button>
-  <button class="tab" onclick="switchTab('captacao')" id="tab-btn-captacao">📥 Captação <span class="tab-count" id="count-captacao">0</span></button>
-  <button class="tab" onclick="switchTab('sense')" id="tab-btn-sense">🏭 Sense <span class="tab-count" id="count-sense">0</span></button>
   <button class="tab" onclick="switchTab('clientes')" id="tab-btn-clientes">👥 Clientes</button>
   <button class="tab" onclick="abrirCadastroRapido()" id="tab-btn-rapido" style="color:var(--green)">⚡ Rápido</button>
 </div>
@@ -283,6 +281,24 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 
 <div class="main">
 
+<!-- ===== GRUPO ESTOQUE: Nuflow BH · Nuflow Brasil (captação) · Sense ===== -->
+<div id="estoque-grupo">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem">
+    <button class="btn est-sub" data-sub="estoque" onclick="switchTab('estoque')" style="border-color:var(--green);color:var(--text);background:var(--bg4)">🏠 Nuflow BH <span class="tab-count" id="count-estoque">0</span></button>
+    <button class="btn est-sub" data-sub="captacao" onclick="switchTab('captacao')">🌎 Nuflow Brasil · Captação <span class="tab-count" id="count-captacao">0</span></button>
+    <button class="btn est-sub" data-sub="sense" onclick="switchTab('sense')">🏭 Sense <span class="tab-count" id="count-sense">0</span></button>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .75rem;margin-bottom:1.25rem">
+    <span style="font-size:12px;color:var(--text3);font-family:'DM Mono',monospace">🔎 Filtrar</span>
+    <input id="est-busca" placeholder="Marca, modelo ou código" oninput="estAplicarFiltro()" style="flex:1;min-width:160px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:7px 10px;font-size:13px;color:var(--text)">
+    <select id="est-tipo" onchange="estAplicarFiltro()"><option value="">Todos os tipos</option></select>
+    <select id="est-ano" onchange="estAplicarFiltro()"><option value="">Todos os anos</option></select>
+    <select id="est-tam" onchange="estAplicarFiltro()"><option value="">Todos os tamanhos</option></select>
+    <button class="btn btn-sm" id="est-limpar" onclick="estLimparFiltro()" style="display:none">✕ Limpar</button>
+    <span id="est-resumo" style="font-size:12px;color:var(--text3)"></span>
+  </div>
+</div>
+
 <!-- ===== ESTOQUE ===== -->
 <div id="sec-estoque" class="section active">
   <div class="metrics">
@@ -293,7 +309,6 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
     <div class="metric m-amber"><div class="metric-label">+30 dias paradas</div><div class="metric-value" id="m-lentas" style="color:var(--amber)">—</div><div class="metric-sub">atenção</div></div>
   </div>
   <div class="toolbar">
-    <select id="f-tipo" onchange="renderEstoque()"><option value="">Todos os tipos</option><option>Trail</option><option>Enduro</option><option>Downhill</option><option>E-MTB</option><option>XC</option><option>Speed</option><option>Gravel</option><option>Urban</option></select>
     <select id="f-aq" onchange="renderEstoque()"><option value="">Consignado + próprio</option><option value="consignado">Consignado</option><option value="proprio">Compra própria</option></select>
     <button id="f-age-btn" onclick="toggleFiltroAge()" style="padding:6px 14px;border-radius:20px;font-size:12px;font-family:'DM Mono',monospace;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--text3);transition:all .15s">+30 dias</button>
     <input type="hidden" id="f-age" value="">
@@ -824,6 +839,7 @@ function updateCounts(){
   const ativos=bikes.filter(b=>!b.vendida);
   const semCheck=ativos.filter(b=>!b.bikeCheck);
   document.getElementById('count-estoque').textContent=ativos.length;
+  if(window.estAtualizarTotal)window.estAtualizarTotal();
   document.getElementById('count-vendidas').textContent=bikes.filter(b=>b.vendida).length;
   const bc=document.getElementById('count-bikecheck');
   bc.textContent=semCheck.length;
@@ -831,11 +847,17 @@ function updateCounts(){
 }
 
 function switchTab(tab){
+  const grupoEstoque=['estoque','captacao','sense'].includes(tab);
   ['estoque','vendidas','bikecheck','analise','fipe','dre','financeiro','nova','captacao','sense','clientes'].forEach(t=>{
     document.getElementById('sec-'+t).classList.toggle('active',t===tab);
     const btn=document.getElementById('tab-btn-'+t);
     if(btn)btn.classList.toggle('active',t===tab);
   });
+  // Estoque é um grupo: Nuflow BH, Captação (Nuflow Brasil) e Sense, com filtros comuns
+  const eg=document.getElementById('estoque-grupo');if(eg)eg.style.display=grupoEstoque?'block':'none';
+  document.getElementById('tab-btn-estoque')?.classList.toggle('active',grupoEstoque);
+  document.querySelectorAll('.est-sub').forEach(b=>{const on=b.dataset.sub===tab;b.style.borderColor=on?'var(--green)':'';b.style.color=on?'var(--text)':'';b.style.background=on?'var(--bg4)':'';});
+  if(grupoEstoque){window._estSub=tab;if(window.estPrepararFiltros)window.estPrepararFiltros();}
   if(tab==='analise')renderAnalise();
   if(tab==='fipe')renderFipe();
   if(tab==='bikecheck'){renderBCPending();}
@@ -853,13 +875,16 @@ function fmtR2(v){return 'R$ '+Number(v).toLocaleString('pt-BR',{minimumFraction
 function calcCom(v){const r=Number(v)*COM_PERC;return Math.min(Math.max(r,COM_PISO),COM_TETO);}
 
 // ===== ESTOQUE =====
+window.estBikesBH=()=>bikes.filter(b=>!b.vendida);
+window.normTipo=(t)=>normTipo(t);
 function renderEstoque(){
+  if(window.estPrepararFiltros)window.estPrepararFiltros();
   const ativos=bikes.filter(b=>!b.vendida);
   let fl=[...ativos];
-  const tipo=document.getElementById('f-tipo')?.value;
   const aq=document.getElementById('f-aq')?.value;
   const age=document.getElementById('f-age')?.value;
-  if(tipo)fl=fl.filter(b=>b.tipo===tipo);
+  if(window.estPassa)fl=fl.filter(b=>window.estPassa(b));
+  if(window.estMostrarResumo)window.estMostrarResumo(fl.length,ativos.length);
   if(aq)fl=fl.filter(b=>b.aquisicao===aq);
   if(age==='ok')fl=fl.filter(b=>diasDesde(b.dataEntrada)<=30);
   if(age==='slow')fl=fl.filter(b=>diasDesde(b.dataEntrada)>30);
@@ -6053,7 +6078,7 @@ function el(tag, attrs, inner) {
 function capCabecalho() {
   var sense = capEscopo === 'sense';
   var h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
-  h += '<div><div style="font-size:20px;font-weight:600">' + (sense ? 'Sense · seminovas de fábrica' : 'Captação de vendedores') + '</div>';
+  h += '<div><div style="font-size:20px;font-weight:600">' + (sense ? 'Sense · seminovas de fábrica' : 'Nuflow Brasil · captação de vendedores') + '</div>';
   h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + (sense ? 'Bikes da parceria Sense, importadas pela planilha de controle' : 'Bikes enviadas pelo formulário online') + '</div></div>';
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
   if (sense) {
@@ -6078,6 +6103,9 @@ function drawCapLista(root) {
   var filtered = capFilter==='todos' ? base
     : capFilter==='paradas30' ? _capParadas30List
     : base.filter(function(b){return b.status===capFilter;});
+  var antesFiltro = filtered.length;
+  filtered = filtered.filter(estPassa);
+  estMostrarResumo(filtered.length, antesFiltro);
   var totalValor = aprovadas.reduce(function(s,b){return s+capPrecoSite(b);},0);
   var totalCom = aprovadas.reduce(function(s,b){return s+capReceitaVenda(b);},0);
   var aguardando = base.filter(function(b){return b.status==='novo'||b.status==='em_analise';}).length;
@@ -6473,6 +6501,7 @@ function drawCapDetalhe(b) {
   if (st === 'aprovado') h += '<button class="btn btn-sm btn-teal" onclick="capPublicarLoja(\x27' + bid + '\x27,false)">' + (b.loja_produto_id ? '🔄 Atualizar na loja' : '🛒 Publicar na loja') + '</button>';
   if (st !== 'aprovado' && b.loja_produto_id) h += '<button class="btn btn-sm" onclick="capDesativarLoja(\x27' + bid + '\x27,false)">🚫 Tirar da loja</button>';
   if (!b.loja_produto_id && st !== 'vendido' && st !== 'reprovado') h += '<button class="btn btn-sm" onclick="capVincularLoja(\x27' + bid + '\x27)">🔗 Já está na loja? Vincular</button>';
+  h += '<button class="btn btn-sm" onclick="capMudarOrigem(\x27' + bid + '\x27)">↔ ' + (b.origem === 'sense' ? 'Mover para Captação' : 'Mover para Sense') + '</button>';
   if (wppNum) {
     var msgOk = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e temos interesse! Podemos conversar?');
     var msgNao = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
@@ -6574,6 +6603,19 @@ async function capPublicarLoja(id, automatico) {
   }
   capLojaOcupado = false;
   await capRecarregarCap(id);
+}
+
+// Muda a origem de uma bike (Captação de vendedores ↔ Sense), para separar vendas e estoque corretamente
+async function capMudarOrigem(id) {
+  var b = capBike(id); if (!b) return;
+  var paraSense = b.origem !== 'sense';
+  if (!confirm('Mover "' + [b.marca, b.modelo, b.ano].filter(Boolean).join(' ') + '" para ' + (paraSense ? 'a aba Sense' : 'a Captação (Nuflow Brasil)') + '?\nA bike passa a contar no estoque, nas vendas e na análise de ' + (paraSense ? 'Sense' : 'Captação') + '.')) return;
+  try {
+    await capSalvar(id, { origem: paraSense ? 'sense' : 'formulario' });
+    capAtualizarContadores();
+    capDetalhe = null; capEditando = false; drawCap();
+    alert('✅ Movida para ' + (paraSense ? 'Sense' : 'Captação') + '.');
+  } catch (e) { alert('Não foi possível mover: ' + e.message); }
 }
 
 // Liga um envio a um anúncio que já existe na loja (cadastrado à mão), para não duplicar ao aprovar
@@ -6888,10 +6930,83 @@ function capAtualizarContadores() {
   var sen = capData.filter(function(b){ return b.origem === 'sense'; });
   var novosV = vend.filter(function(b){ return b.status === 'novo'; }).length;
   var el = document.getElementById('count-captacao');
-  if (el) { el.textContent = vend.length; el.className = 'tab-count' + (novosV > 0 ? ' warn' : ''); }
+  if (el) { el.textContent = vend.filter(function(b){ return b.status !== 'vendido' && b.status !== 'reprovado'; }).length; el.className = 'tab-count' + (novosV > 0 ? ' warn' : ''); }
   var es = document.getElementById('count-sense');
   if (es) es.textContent = sen.filter(function(b){ return b.status !== 'vendido' && b.status !== 'reprovado'; }).length;
+  if (window.estAtualizarTotal) window.estAtualizarTotal();
 }
+
+// ===== FILTROS DO ESTOQUE (valem para Nuflow BH, Captação e Sense) =====
+function estTipoN(t) { return window.normTipo ? window.normTipo(t) : (String(t || '').trim() || 'Não informado'); }
+function estTamN(t) { return String(t || '').trim().toUpperCase().replace(/\s*CM$/, '') || ''; }
+function estAnoN(a) { var m = String(a || '').match(/(19|20)\d\d/); return m ? m[0] : ''; }
+function estFiltroAtual() {
+  var v = function(id){ var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return { busca: v('est-busca').toLowerCase(), tipo: v('est-tipo'), ano: v('est-ano'), tam: v('est-tam') };
+}
+// Serve para bikes do estoque BH (Firebase) e para envios da Captação/Sense (Supabase)
+function estPassa(b) {
+  var f = estFiltroAtual();
+  if (f.tipo && estTipoN(b.tipo) !== f.tipo) return false;
+  if (f.ano && estAnoN(b.ano) !== f.ano) return false;
+  if (f.tam && estTamN(b.tamanho) !== f.tam) return false;
+  if (f.busca) {
+    var alvo = [b.marca, b.modelo, b.versao, b.cor, b.codigo_externo, b.nome].filter(Boolean).join(' ').toLowerCase();
+    if (f.busca.split(/\s+/).some(function(p){ return alvo.indexOf(p) < 0; })) return false;
+  }
+  return true;
+}
+window.estPassa = estPassa;
+function estFiltroAtivo() { var f = estFiltroAtual(); return !!(f.busca || f.tipo || f.ano || f.tam); }
+function estMostrarResumo(n, total) {
+  var el = document.getElementById('est-resumo'), lim = document.getElementById('est-limpar');
+  var ativo = estFiltroAtivo();
+  if (el) el.textContent = ativo ? n + ' de ' + total + ' bikes' : '';
+  if (lim) lim.style.display = ativo ? '' : 'none';
+}
+window.estMostrarResumo = estMostrarResumo;
+// Opções dos filtros a partir das bikes em estoque das 3 abas
+function estPrepararFiltros() {
+  var bh = window.estBikesBH ? window.estBikesBH() : [];
+  var cap = (capData || []).filter(function(b){ return b.status !== 'vendido' && b.status !== 'reprovado'; });
+  var todas = bh.concat(cap);
+  var preencher = function(id, valores, rotulo, ordem){
+    var el = document.getElementById(id); if (!el) return;
+    var atual = el.value;
+    var uniq = Array.from(new Set(valores.filter(Boolean))).sort(ordem);
+    el.innerHTML = '<option value="">' + rotulo + '</option>' + uniq.map(function(v){ return '<option' + (v === atual ? ' selected' : '') + '>' + capEsc(v) + '</option>'; }).join('');
+  };
+  var ordTam = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'];
+  preencher('est-tipo', todas.map(function(b){ return estTipoN(b.tipo); }).filter(function(t){ return t !== 'Não informado'; }), 'Todos os tipos');
+  preencher('est-ano', todas.map(function(b){ return estAnoN(b.ano); }), 'Todos os anos', function(a, b){ return b.localeCompare(a); });
+  preencher('est-tam', todas.map(function(b){ return estTamN(b.tamanho); }), 'Todos os tamanhos', function(a, b){
+    var ia = ordTam.indexOf(a), ib = ordTam.indexOf(b), na = parseFloat(a), nb = parseFloat(b);
+    if (ia >= 0 && ib >= 0) return ia - ib; if (ia >= 0) return -1; if (ib >= 0) return 1;
+    if (!isNaN(na) && !isNaN(nb)) return na - nb; return a.localeCompare(b);
+  });
+  // A captação/Sense ainda não carregou: carrega em segundo plano para os contadores e filtros
+  if (!capLoaded && !window._estCarregandoCap) {
+    window._estCarregandoCap = true;
+    sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*').then(function(d){
+      if (Array.isArray(d) && !capLoaded) { capData = d; window.capData = d; capAtualizarContadores(); estPrepararFiltros(); }
+    }).catch(function(){}).then(function(){ window._estCarregandoCap = false; });
+  }
+}
+window.estPrepararFiltros = estPrepararFiltros;
+function estAplicarFiltro() {
+  var sub = window._estSub || 'estoque';
+  if (sub === 'estoque') { if (window.renderEstoque) window.renderEstoque(); }
+  else { capFilter = capFilter || 'todos'; capDetalhe = null; capSubTab = 'lista'; drawCap(); }
+}
+function estLimparFiltro() {
+  ['est-busca', 'est-tipo', 'est-ano', 'est-tam'].forEach(function(id){ var el = document.getElementById(id); if (el) el.value = ''; });
+  estAplicarFiltro();
+}
+window.estAtualizarTotal = function() {
+  var n = function(id){ var el = document.getElementById(id); return el ? (parseInt(el.textContent, 10) || 0) : 0; };
+  var t = document.getElementById('count-estoque-total');
+  if (t) t.textContent = n('count-estoque') + n('count-captacao') + n('count-sense');
+};
 
 // ===== CONFIGURAÇÃO: % da Nuflow nas vendas da Sense (fica no Supabase, vale para todos) =====
 var capSensePct = null;
