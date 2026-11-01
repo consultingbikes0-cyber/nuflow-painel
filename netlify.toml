@@ -7,3 +7,6 @@
 
 [functions."d4sign"]
   timeout = 26
+
+[functions."publicar-loja"]
+  timeout = 26
