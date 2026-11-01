@@ -13,3 +13,6 @@
 
 [functions."padronizar-anuncio"]
   timeout = 26
+
+[functions."drive-fotos"]
+  timeout = 26
