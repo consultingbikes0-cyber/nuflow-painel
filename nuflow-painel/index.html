@@ -366,7 +366,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 
   <div class="metrics" id="analise-metrics"></div>
   <div class="charts-grid">
-    <div class="chart-card"><div class="chart-title">Faturamento por mês</div><div class="chart-wrap"><canvas id="chart-comissao"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">Receita Nuflow (comissão) por mês</div><div class="chart-wrap"><canvas id="chart-comissao"></canvas></div></div>
     <div class="chart-card"><div class="chart-title">Evolução dos saldos</div><div class="chart-wrap"><canvas id="chart-saldos"></canvas></div></div>
     <div class="chart-card"><div class="chart-title">Financeiro — Saídas por tipo</div><div class="chart-wrap"><canvas id="chart-financeiro-tipo"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><div class="chart-title">Financeiro — Movimentações por mês</div><div class="chart-wrap" style="height:200px"><canvas id="chart-financeiro-mes"></canvas></div></div>
@@ -376,6 +376,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
     <div class="chart-card full"><div class="chart-title">Tempo de venda por bike</div><div class="chart-wrap" style="height:260px"><canvas id="chart-tempo"></canvas></div></div>
   </div>
   <div class="insight-grid" id="insight-grid"></div>
+  <div id="analise-qualidade" style="margin-top:1.5rem"></div>
 </div>
 
 <!-- ===== TABELA DE PREÇOS ===== -->
@@ -4148,6 +4149,68 @@ window.toggleFipeComissao=function(){
 };
 
 // ===== ANÁLISE =====
+// ---------- Normalização para os gráficos (junta grafias diferentes do mesmo valor) ----------
+function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function semAcentoMin(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();}
+function normTipo(t){
+  const x=semAcentoMin(t).replace(/\s+/g,' ');
+  if(!x||x==='outro')return 'Não informado';
+  if(/^(e[- ]?mtb|e[- ]?bike|ebike|emtb|eletrica|e-trail|e trail)$/.test(x)||/^e[- ]?(mtb|bike)/.test(x))return 'E-MTB';
+  if(/^(dh|downhill)$/.test(x))return 'DH';
+  if(/^enduro/.test(x))return 'Enduro';
+  if(/^(xc|cross ?country)/.test(x))return 'XC';
+  if(/^trail/.test(x))return 'Trail';
+  if(/^gravel/.test(x))return 'Gravel';
+  if(/^(speed|road|estrada)/.test(x))return 'Speed';
+  if(/^urban/.test(x))return 'Urbana';
+  return String(t).trim().charAt(0).toUpperCase()+String(t).trim().slice(1);
+}
+function normMarca(m){
+  const x=String(m||'').trim();
+  if(!x)return 'Não informada';
+  if(x.length<=3)return x.toUpperCase(); // BMC, GT, YT
+  return x.toLowerCase().replace(/(^|[\s-])([a-zà-ú])/g,(a,b,c)=>b+c.toUpperCase());
+}
+function normTamanho(t){const x=String(t||'').trim().toUpperCase();return !x||x==='OUTRO'?'Não informado':x;}
+function contarPor(arr,fn){const r={};arr.forEach(b=>{const k=fn(b);r[k]=(r[k]||0)+1;});return r;}
+
+// Quadro "Conferência dos dados": mostra o que está faltando no histórico e fica fora de cada gráfico
+function renderQualidadeDados(vv){
+  const el=document.getElementById('analise-qualidade');if(!el)return;
+  const nome=b=>`${b.marca||''} ${b.modelo||''}`.trim()||'(sem nome)';
+  const grupos=[
+    ['Sem data de venda','fora do gráfico de receita por mês, das metas e dos saldos',vv.filter(b=>!b.dataVenda)],
+    ['Sem valor de venda','fora do ticket médio e do GMV',vv.filter(b=>!(Number(b.valorVenda)>0))],
+    ['Sem comissão registrada','fora da receita por mês, dos saldos e das metas de faturamento',vv.filter(b=>!(Number(b.comissaoRecebida)>0))],
+    ['Sem tipo','aparecem como "Não informado" em Bikes por tipo',vv.filter(b=>normTipo(b.tipo)==='Não informado')],
+    ['Sem tamanho','aparecem como "Não informado" em Tamanhos',vv.filter(b=>normTamanho(b.tamanho)==='Não informado')],
+    ['Sem dias para vender','fora de Tempo de venda e do tempo médio',vv.filter(b=>b.historico||b.diasParaVender==null)],
+    ['Sem canal de venda','fora do "Canal top"',vv.filter(b=>!String(b.canalVenda||'').trim()||b.canalVenda==='Outro')]
+  ];
+  // Grafias juntadas pela normalização
+  const juntados=[];
+  [['tipo',normTipo],['marca',normMarca],['tamanho',normTamanho]].forEach(([campo,fn])=>{
+    const m={};vv.forEach(b=>{const o=String(b[campo]||'').trim();if(!o)return;const n=fn(o);if(o!==n){const k=o+' → '+n;m[k]=(m[k]||0)+1;}});
+    Object.entries(m).forEach(([k,n])=>juntados.push(campo+': '+k+' ('+n+')'));
+  });
+  const linhas=grupos.map(([t,efeito,lista])=>{
+    const ok=!lista.length;
+    return `<div style="padding:.6rem 0;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span style="font-size:13px;color:${ok?'var(--text2)':'var(--amber)'}">${ok?'✅':'⚠️'} ${t}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text3)">${lista.length} de ${vv.length}</span></div>
+      ${ok?'':`<div style="font-size:11px;color:var(--text3);margin-top:2px">${efeito}</div>
+      <details style="margin-top:4px"><summary style="font-size:11px;color:var(--teal);cursor:pointer">ver quais</summary>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.6">${lista.slice(0,40).map(b=>esc(nome(b))+(b.dataVenda?' · '+new Date(b.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):'')).join('<br>')}${lista.length>40?'<br>…':''}</div></details>`}
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">
+    <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace;margin-bottom:.5rem">🔎 Conferência dos dados · ${vv.length} vendas no histórico</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:.5rem">O que está incompleto fica fora do gráfico indicado. Para corrigir, abra a venda em "Vendidas" e complete o campo.</div>
+    ${linhas}
+    ${juntados.length?`<div style="padding:.6rem 0;border-top:1px solid var(--border)"><div style="font-size:13px;color:var(--text2)">🔗 Grafias diferentes juntadas nos gráficos</div><div style="font-size:12px;color:var(--text3);margin-top:4px;line-height:1.6">${juntados.map(esc).join('<br>')}</div></div>`:''}
+  </div>`;
+}
+
 function renderAnalise(){
   renderProgressoMetas();
   const at=bikes.filter(b=>!b.vendida);
@@ -4156,7 +4219,7 @@ function renderAnalise(){
   if(metricsEl) metricsEl.innerHTML=`
     <div class="metric m-green"><div class="metric-label">Total vendidas</div><div class="metric-value">${vv.length}</div></div>
     <div class="metric m-blue"><div class="metric-label">Em estoque</div><div class="metric-value">${at.length}</div></div>
-    <div class="metric m-amber"><div class="metric-label">Ticket médio</div><div class="metric-value sm">${vv.length?fmtRInt(Math.round(vv.reduce((s,b)=>s+Number(b.valorVenda||0),0)/vv.length)):'—'}</div></div>
+    <div class="metric m-amber"><div class="metric-label">Ticket médio</div><div class="metric-value sm">${(()=>{const cv=vv.filter(b=>Number(b.valorVenda)>0);return cv.length?fmtRInt(Math.round(cv.reduce((s,b)=>s+Number(b.valorVenda),0)/cv.length)):'—';})()}</div><div class="metric-sub">${vv.filter(b=>Number(b.valorVenda)>0).length} vendas com valor</div></div>
     <div class="metric m-purple"><div class="metric-label">Sem bike check</div><div class="metric-value" style="color:var(--amber)">${at.filter(b=>!b.bikeCheck).length}</div><div class="metric-sub">em estoque</div></div>
   `;
   destroyCharts();
@@ -4167,26 +4230,30 @@ function renderAnalise(){
   }
   const pm={};
   vv.forEach(b=>{if(!b.dataVenda)return;const k=b.dataVenda.substring(0,7);pm[k]=(pm[k]||0)+Number(b.comissaoRecebida||0);});
-  const meses=Object.keys(pm).sort();
-  buildChart('chart-comissao','bar',meses.map(m=>{const[y,mo]=m.split('-');return mo+'/'+y.substring(2);}),meses.map(m=>Math.round(pm[m])),{color:'#00e676',label:'Receita (R$)'});
+  const mesesCom=Object.keys(pm).sort();
+  const meses=[];
+  if(mesesCom.length){let [y,mo]=mesesCom[0].split('-').map(Number);const [yf,mf]=mesesCom[mesesCom.length-1].split('-').map(Number);
+    while(y<yf||(y===yf&&mo<=mf)){meses.push(y+'-'+String(mo).padStart(2,'0'));mo++;if(mo>12){mo=1;y++;}}}
+  buildChart('chart-comissao','bar',meses.map(m=>{const[y,mo]=m.split('-');return mo+'/'+y.substring(2);}),meses.map(m=>Math.round(pm[m]||0)),{color:'#00e676',label:'Receita (R$)'});
   buildChartSaldos();
-  const pt=cnt(vv,'tipo');
-  buildChart('chart-tipos','doughnut',Object.keys(pt),Object.values(pt),{colors:['#00e676','#4fc3f7','#ffab00','#ff5252','#b388ff','#26c6da'],label:'Vendas'});
-  const pm2=cnt(vv,'marca');
+  const pt=contarPor(vv,b=>normTipo(b.tipo));
+  const ptOrd=Object.entries(pt).sort((a,b)=>b[1]-a[1]);
+  buildChart('chart-tipos','doughnut',ptOrd.map(x=>x[0]),ptOrd.map(x=>x[1]),{label:'Vendas',unidade:'venda'});
+  const pm2=contarPor(vv,b=>normMarca(b.marca));
   const top6=Object.entries(pm2).sort((a,b)=>b[1]-a[1]).slice(0,6);
   buildChart('chart-marcas','bar',top6.map(x=>x[0]),top6.map(x=>x[1]),{color:'#4fc3f7',label:'Vendas',horizontal:true});
   const psTam={};
-  vv.forEach(b=>{const t=(b.tamanho||'').trim();const key=t&&t!=='Outro'?t:'Não inf.';psTam[key]=(psTam[key]||0)+1;});
+  vv.forEach(b=>{const key=normTamanho(b.tamanho);psTam[key]=(psTam[key]||0)+1;});
   const tsSorted=Object.entries(psTam).sort((a,b)=>b[1]-a[1]);
   buildChart('chart-tamanhos','bar',tsSorted.map(x=>x[0]),tsSorted.map(x=>x[1]),{color:'#ffab00',label:'Vendas'});
   const vvPainel=vv.filter(b=>!b.historico&&b.diasParaVender!=null);
-  const cd=vvPainel.slice(-20);
-  if(cd.length)buildChart('chart-tempo','bar',cd.map(b=>`${b.marca} ${b.modelo}`),cd.map(b=>b.diasParaVender),{color:'#b388ff',label:'Dias',axisLabels:true});
+  const cd=vvPainel.slice().sort((a,b)=>String(a.dataVenda||'').localeCompare(String(b.dataVenda||''))).slice(-20);
+  if(cd.length)buildChart('chart-tempo','bar',cd.map(b=>`${normMarca(b.marca)} ${b.modelo||''}`.trim()),cd.map(b=>b.diasParaVender),{color:'#b388ff',label:'Dias',axisLabels:true});
   if(typeof finLancamentos!=='undefined'&&finLancamentos.length){
     const saidas=finLancamentos.filter(f=>f.valor<0);
     const porTipo={};
     saidas.forEach(f=>{const label=(FIN_TIPOS[f.tipo]||{label:f.tipo}).label;porTipo[label]=(porTipo[label]||0)+Math.abs(f.valor);});
-    if(Object.keys(porTipo).length)buildChart('chart-financeiro-tipo','doughnut',Object.keys(porTipo),Object.values(porTipo).map(Math.round),{colors:['#ab47bc','#26c6da','#ffab00','#42a5f5','#00e676','#ef5350','#78909c'],label:'R$'});
+    if(Object.keys(porTipo).length)buildChart('chart-financeiro-tipo','doughnut',Object.keys(porTipo),Object.values(porTipo).map(Math.round),{label:'R$',moeda:true});
     const porMesFin={};
     finLancamentos.forEach(f=>{const mes=(f.data||'').substring(0,7);if(!mes)return;if(!porMesFin[mes])porMesFin[mes]={entradas:0,saidas:0};if(f.valor>0)porMesFin[mes].entradas+=f.valor;else porMesFin[mes].saidas+=Math.abs(f.valor);});
     const mesesFin=Object.keys(porMesFin).sort();
@@ -4206,7 +4273,7 @@ function renderAnalise(){
       }
     }
   }
-  const cc=cnt(vv,'canalVenda');
+  const cc=contarPor(vv.filter(b=>String(b.canalVenda||'').trim()&&b.canalVenda!=='Outro'),b=>normMarca(b.canalVenda));
   const mc=Object.entries(cc).sort((a,b)=>b[1]-a[1])[0];
   const mt=Object.entries(pt).sort((a,b)=>b[1]-a[1])[0];
   const mm=Object.entries(pm2).sort((a,b)=>b[1]-a[1])[0];
@@ -4218,6 +4285,7 @@ function renderAnalise(){
     <div class="insight-card"><div class="insight-label">Marca top</div><div class="insight-value">${mm?mm[0]:'—'}</div><div class="insight-sub">${mm?mm[1]+' vendas':''}</div></div>
     <div class="insight-card"><div class="insight-label">Tempo médio</div><div class="insight-value">${diasMed||'—'}</div><div class="insight-sub">dias para vender</div></div>
   `;
+  renderQualidadeDados(vv);
 }
 window.renderAnalise=renderAnalise;
 
@@ -4377,9 +4445,25 @@ window.renderFipe=renderFipe;
 // ===== HELPERS =====
 function cnt(arr,key){const r={};arr.forEach(b=>{const v=b[key]||'Outro';r[v]=(r[v]||0)+1;});return r;}
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});charts={};}
+const PALETA_GRAFICOS=['#00e676','#4fc3f7','#ffab00','#ff5252','#b388ff','#26c6da','#ff8a65','#fff176','#f06292','#90a4ae'];
 function buildChart(id,type,labels,data,opts={}){
   const canvas=document.getElementById(id);if(!canvas)return;
   const ctx=canvas.getContext('2d');const isH=opts.horizontal;
+  if(type==='doughnut'){
+    // Agrupa fatias pequenas em "Outros" para não repetir cores
+    if(labels.length>8){const pares=labels.map((l,i)=>[l,data[i]]).sort((a,b)=>b[1]-a[1]);const top=pares.slice(0,7),resto=pares.slice(7);
+      labels=top.map(p=>p[0]).concat(['Outros']);data=top.map(p=>p[1]).concat([resto.reduce((s,p)=>s+p[1],0)]);}
+    const total=data.reduce((s,v)=>s+Number(v||0),0)||1;
+    const pctDe=v=>Math.round(Number(v||0)/total*1000)/10;
+    const fmtV=v=>opts.moeda?'R$ '+Math.round(v).toLocaleString('pt-BR'):v+' '+(opts.unidade?(v===1?opts.unidade:opts.unidade+'s'):'');
+    const cores=labels.map((l,i)=>PALETA_GRAFICOS[i%PALETA_GRAFICOS.length]);
+    charts[id]=new Chart(ctx,{type:'doughnut',
+      data:{labels:labels.map((l,i)=>l+' · '+pctDe(data[i]).toLocaleString('pt-BR')+'%'),datasets:[{label:opts.label||'',data,backgroundColor:cores.map(c=>c+'cc'),borderColor:'#161616',borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'55%',
+        plugins:{legend:{position:'right',labels:{color:'#bbb',font:{family:'DM Sans',size:11},padding:8,boxWidth:12}},
+          tooltip:{callbacks:{label:c=>' '+labels[c.dataIndex]+': '+fmtV(c.parsed)+' ('+pctDe(c.parsed).toLocaleString('pt-BR')+'%)'}}}}});
+    return;
+  }
   const colors=opts.colors||Array(data.length).fill(opts.color||'#00e676');
   const scaleX=isH?
     // Horizontal: X = valores numéricos, Y = labels
@@ -4448,7 +4532,7 @@ function renderProgressoMetas(){
   if(!metas.fat&&!metas.qtd&&!metas.gmv&&!metas.dias){el.innerHTML='';return;}
 
   // Vendas do mês atual
-  const mesAtual=new Date().toISOString().substring(0,7);
+  const _h=new Date();const mesAtual=_h.getFullYear()+'-'+String(_h.getMonth()+1).padStart(2,'0');
   const vendasMes=bikes.filter(b=>b.vendida&&(b.dataVenda||'').startsWith(mesAtual));
   const fatMes=vendasMes.reduce((s,b)=>s+Number(b.comissaoRecebida||0),0);
   const gmvMes=vendasMes.reduce((s,b)=>s+Number(b.valorVenda||0),0);
@@ -4462,7 +4546,7 @@ function renderProgressoMetas(){
   const barra=(atual,meta,label,fmt,inv=false)=>{
     if(!meta)return '';
     const pct=Math.min(Math.round(atual/meta*100),100);
-    const cor=inv?(pct<=100?'var(--green)':'var(--red)'):(pct>=100?'var(--green)':pct>=70?'var(--amber)':'var(--red)');
+    const cor=inv?(atual<=meta?'var(--green)':'var(--red)'):(pct>=100?'var(--green)':pct>=70?'var(--amber)':'var(--red)');
     return `<div style="flex:1;min-width:200px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
         <span style="font-size:12px;color:var(--text2)">${label}</span>
