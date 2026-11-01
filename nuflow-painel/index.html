@@ -237,6 +237,7 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
   <button class="tab" onclick="switchTab('financeiro')" id="tab-btn-financeiro">Financeiro</button>
   <button class="tab" onclick="switchTab('nova')" id="tab-btn-nova">+ Cadastrar</button>
   <button class="tab" onclick="switchTab('captacao')" id="tab-btn-captacao">📥 Captação <span class="tab-count" id="count-captacao">0</span></button>
+  <button class="tab" onclick="switchTab('sense')" id="tab-btn-sense">🏭 Sense <span class="tab-count" id="count-sense">0</span></button>
   <button class="tab" onclick="switchTab('clientes')" id="tab-btn-clientes">👥 Clientes</button>
   <button class="tab" onclick="abrirCadastroRapido()" id="tab-btn-rapido" style="color:var(--green)">⚡ Rápido</button>
 </div>
@@ -515,6 +516,10 @@ header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2re
 
 <div id="sec-captacao" class="section">
 <div id="captacao-root"></div>
+</div>
+
+<div id="sec-sense" class="section">
+<div id="sense-root"></div>
 </div>
 
 <div id="sec-nova" class="section">
@@ -825,7 +830,7 @@ function updateCounts(){
 }
 
 function switchTab(tab){
-  ['estoque','vendidas','bikecheck','analise','fipe','dre','financeiro','nova','captacao','clientes'].forEach(t=>{
+  ['estoque','vendidas','bikecheck','analise','fipe','dre','financeiro','nova','captacao','sense','clientes'].forEach(t=>{
     document.getElementById('sec-'+t).classList.toggle('active',t===tab);
     const btn=document.getElementById('tab-btn-'+t);
     if(btn)btn.classList.toggle('active',t===tab);
@@ -836,6 +841,7 @@ function switchTab(tab){
   if(tab==='dre')renderDRE();
   if(tab==='financeiro')renderFinanceiro();
   if(tab==='captacao')renderCaptacao();
+  if(tab==='sense'&&window.renderSense)window.renderSense();
   if(tab==='clientes')renderClientes();
 }
 window.switchTab=switchTab;
@@ -5262,7 +5268,7 @@ async function sbFetch(path, opts) {
 }
 
 async function loadCapData() {
-  var root = document.getElementById('captacao-root');
+  var root = capRoot();
   if (root) root.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-family:DM Mono,monospace">carregando...</div>';
   var data;
   try{
@@ -5281,9 +5287,7 @@ async function loadCapData() {
   capData = Array.isArray(data) ? data : [];
   window.capData = capData;
   capLoaded = true;
-  var novos = capData.filter(function(b){return b.status==='novo';}).length;
-  var el = document.getElementById('count-captacao');
-  if (el) { el.textContent=capData.length; el.className='tab-count'+(novos>0?' warn':''); }
+  capAtualizarContadores();
   drawCap();
   return true;
 }
@@ -5779,7 +5783,7 @@ async function capImportConfirmar() {
     for (var k = 0; k < sairam.length; k++) {
       mostrar('Marcando como vendida ' + (k + 1) + ' de ' + sairam.length + '...');
       try {
-        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(sairam[k].bike.id), { method: 'PATCH', body: JSON.stringify({ status: 'vendido', atualizado_em: new Date().toISOString() }) });
+        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(sairam[k].bike.id), { method: 'PATCH', body: JSON.stringify({ status: 'vendido', vendido_em: new Date().toISOString(), atualizado_em: new Date().toISOString() }) });
         if (sairam[k].bike.loja_produto_id) desativar.push(sairam[k].bike.id);
       } catch (e) { erros.push('Cód. ' + sairam[k].bike.codigo_externo + ': ' + e.message); }
     }
@@ -5800,7 +5804,7 @@ async function capImportConfirmar() {
         var alvo = (atuais || []).find(function(b){ return String(b.codigo_externo) === String(vincular[v].sugestao.codigo_externo); });
         if (!alvo) { erros.push('Vincular cód. ' + vincular[v].sugestao.codigo_externo + ': a bike não foi importada (marque-a entre as novas).'); continue; }
         try {
-          await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(alvo.id), { method: 'PATCH', body: JSON.stringify({ loja_produto_id: vincular[v].produto.id, status: 'aprovado', publicado_em: new Date().toISOString(), atualizado_em: new Date().toISOString() }) });
+          await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(alvo.id), { method: 'PATCH', body: JSON.stringify({ loja_produto_id: vincular[v].produto.id, status: 'aprovado', aprovado_em: new Date().toISOString(), publicado_em: new Date().toISOString(), atualizado_em: new Date().toISOString() }) });
         } catch (e) { erros.push('Vincular cód. ' + vincular[v].sugestao.codigo_externo + ': ' + e.message); }
       }
     }
@@ -5939,7 +5943,7 @@ async function capSalvarCatalogo(id) {
 
 
 function drawCap() {
-  var root = document.getElementById('captacao-root');
+  var root = capRoot();
   if (!root) return;
   if (capImport) { drawCapImport(root); return; }
   if (capDetalhe) {
@@ -5961,43 +5965,50 @@ function el(tag, attrs, inner) {
   return parts;
 }
 
-function drawCapLista(root) {
-  var aprovadas = capData.filter(function(b){return b.status==='aprovado';});
-  _capParadas30List = aprovadas.filter(function(b){return capDias(b.criado_em)>30;});
-  var filtered = capFilter==='todos' ? capData
-    : capFilter==='paradas30' ? _capParadas30List
-    : capData.filter(function(b){return b.status===capFilter;});
-  var totalValor = aprovadas.reduce(function(s,b){return s+Number(b.preco_pedido||0);},0);
-  var totalCom = aprovadas.reduce(function(s,b){return s+capCalcCom(b.preco_pedido);},0);
-  var aguardando = capData.filter(function(b){return b.status==='novo'||b.status==='em_analise';}).length;
-  var paradas = aprovadas.filter(function(b){return capDias(b.criado_em)>30;}).length;
-  var counts = {};
-  ['novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){counts[s]=capData.filter(function(b){return b.status===s;}).length;});
-
-  var h = '';
-
-  // Header
-  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
-  h += '<div><div style="font-size:20px;font-weight:600">Captação remota</div>';
-  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">Bikes enviadas pelo formulário online e pela planilha da Sense</div></div>';
-  var semFotosSense = capData.filter(function(b){ return b.origem === 'sense' && b.fotos_link && !capFotos(b).length && b.status !== 'vendido' && b.status !== 'reprovado'; }).length;
+// Cabeçalho das abas Captação e Sense (título, botões e sub-abas)
+function capCabecalho() {
+  var sense = capEscopo === 'sense';
+  var h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
+  h += '<div><div style="font-size:20px;font-weight:600">' + (sense ? 'Sense · seminovas de fábrica' : 'Captação de vendedores') + '</div>';
+  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + (sense ? 'Bikes da parceria Sense, importadas pela planilha de controle' : 'Bikes enviadas pelo formulário online') + '</div></div>';
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
-  if (semFotosSense) h += '<button class="btn btn-sm btn-amber" onclick="capBuscarFotosPendentes()">📷 Buscar fotos do Drive (' + semFotosSense + ')</button>';
-  h += '<label class="btn btn-sm btn-teal" style="position:relative;overflow:hidden;cursor:pointer">📥 Importar planilha Sense<input type="file" accept=".xlsx,.xls,.csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="capImportarArquivo(this)"></label>';
+  if (sense) {
+    var semFotosSense = capData.filter(function(b){ return b.origem === 'sense' && b.fotos_link && !capFotos(b).length && b.status !== 'vendido' && b.status !== 'reprovado'; }).length;
+    if (semFotosSense) h += '<button class="btn btn-sm btn-amber" onclick="capBuscarFotosPendentes()">📷 Buscar fotos do Drive (' + semFotosSense + ')</button>';
+    h += '<label class="btn btn-sm btn-teal" style="position:relative;overflow:hidden;cursor:pointer">📥 Importar planilha Sense<input type="file" accept=".xlsx,.xls,.csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="capImportarArquivo(this)"></label>';
+  }
   h += '<button class="btn btn-primary btn-sm" onclick="loadCapData()">↻ Atualizar</button></div></div>';
   h += '<div style="display:flex;gap:8px;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0">';
   var tabLista = capSubTab==='lista' ? 'border-bottom:2px solid var(--green);color:var(--text)' : 'border-bottom:2px solid transparent;color:var(--text3)';
   var tabAnalise = capSubTab==='analise' ? 'border-bottom:2px solid var(--green);color:var(--text)' : 'border-bottom:2px solid transparent;color:var(--text3)';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabLista + '" onclick="capSetSubTab(0)">&#128203; Submiss&#245;es</button>';
+  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabLista + '" onclick="capSetSubTab(0)">&#128203; ' + (sense ? 'Bikes' : 'Submiss&#245;es') + '</button>';
   h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabAnalise + '" onclick="capSetSubTab(1)">&#128202; An&#225;lise</button>';
   h += '</div>';
+  return h;
+}
+
+function drawCapLista(root) {
+  var base = capData.filter(capNoEscopo);
+  var aprovadas = base.filter(function(b){return b.status==='aprovado';});
+  _capParadas30List = aprovadas.filter(function(b){return capDias(b.aprovado_em || b.publicado_em || b.criado_em)>30;});
+  var filtered = capFilter==='todos' ? base
+    : capFilter==='paradas30' ? _capParadas30List
+    : base.filter(function(b){return b.status===capFilter;});
+  var totalValor = aprovadas.reduce(function(s,b){return s+capPrecoSite(b);},0);
+  var totalCom = aprovadas.reduce(function(s,b){return s+capReceitaVenda(b);},0);
+  var aguardando = base.filter(function(b){return b.status==='novo'||b.status==='em_analise';}).length;
+  var paradas = _capParadas30List.length;
+  var counts = {};
+  ['novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){counts[s]=base.filter(function(b){return b.status===s;}).length;});
+
+  var h = capCabecalho();
 
   // Metrics
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:2rem">';
   var mets = [
     {l:'ANUNCIADAS', v:aprovadas.length, s:'bikes ativas', c:'var(--green)'},
-    {l:'VALOR TOTAL', v:capFmtR(totalValor), s:'preços pedidos', c:'var(--blue)'},
-    {l:'COMISSÃO POT.', v:capFmtR(totalCom), s:'10% · min R$800 · max R$5k', c:'var(--teal)'},
+    {l:'VALOR ANUNCIADO', v:capFmtR(totalValor), s:'preço no site', c:'var(--blue)'},
+    {l:'RECEITA POTENCIAL', v:(capEscopo==='sense' && capSensePct==null) ? '—' : capFmtR(totalCom), s:capEscopo==='sense' ? (capSensePct!=null ? capSensePct+'% das vendas' : 'defina o % na Análise') : '10% · min R$800 · max R$5k', c:'var(--teal)'},
     {l:'AGUARD. ANÁLISE', v:aguardando, s:aguardando>0?'atenção':'em dia', c:'var(--amber)'},
     {l:'+30 DIAS', v:paradas, s:paradas>0?'atenção':'ok', c:paradas>0?'var(--amber)':'var(--green)', f:'paradas30'}
   ];
@@ -6026,7 +6037,7 @@ function drawCapLista(root) {
   h += '<div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">';
   ['todos','novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){
     var active=capFilter===s?'background:var(--bg4);color:var(--text);':'';
-    var lbl=s==='todos'?'Todos ('+capData.length+')':s==='paradas30'?'+30 dias ('+_capParadas30List.length+')':CAP_LABELS[s];
+    var lbl=s==='todos'?'Todos ('+base.length+')':s==='paradas30'?'+30 dias ('+_capParadas30List.length+')':CAP_LABELS[s];
     h += '<button class="btn btn-sm" style="'+active+'" onclick="capFilter=\x27'+s+'\x27;drawCap()">'+lbl+'</button>';
   });
   h += '</div>';
@@ -6397,6 +6408,8 @@ function capFecharDetalhe() { capDetalhe = null; capEditando = false; capRevisao
 async function capMudarStatus(id, status) {
   var b = capBike(id);
   var campos = { status: status };
+  if (status === 'aprovado' && !(b && b.aprovado_em)) campos.aprovado_em = new Date().toISOString();
+  if (status === 'vendido') campos.vendido_em = new Date().toISOString();
   if (status === 'aprovado') {
     if (b && !capPrecoSite(b)) { alert('Defina o preço no site (✏️ Editar anúncio) antes de aprovar.'); return; }
     if (b && !capFotos(b).length) { alert('Adicione pelo menos uma foto antes de aprovar.'); return; }
@@ -6487,7 +6500,7 @@ async function capVincularLoja(id) {
   if (!pid) { alert('Informe só o número do produto.'); return; }
   if (capData.some(function(x){ return !capSameId(x.id, id) && String(x.loja_produto_id) === pid; })) { alert('Esse produto da loja já está vinculado a outra bike do painel.'); return; }
   try {
-    await capSalvar(id, { loja_produto_id: Number(pid), status: 'aprovado', publicado_em: new Date().toISOString() });
+    await capSalvar(id, { loja_produto_id: Number(pid), status: 'aprovado', aprovado_em: new Date().toISOString(), publicado_em: new Date().toISOString() });
     alert('🔗 Vinculado ao produto ' + pid + '. A bike ficou como "Aprovado". Use "🔄 Atualizar na loja" quando quiser aplicar o padrão novo ao anúncio.');
   } catch (e) { alert('Não foi possível vincular: ' + e.message); }
   await capRecarregarCap(id);
@@ -6756,7 +6769,7 @@ async function capSalvarEdicao(id, aprovar) {
   if (aprovar && !pv) { if (msg) msg.textContent = 'Defina o preço no site antes de aprovar.'; return; }
   // Descrição final sempre gerada a partir do que você editou
   campos.descricao_gerada = capGerarDescricao(Object.assign({}, b, campos));
-  if (aprovar) campos.status = 'aprovado';
+  if (aprovar) { campos.status = 'aprovado'; if (!b.aprovado_em) campos.aprovado_em = new Date().toISOString(); }
   if (aprovar && !confirm('Salvar, aprovar e publicar este anúncio na Loja Integrada?')) return;
   var jaNaLoja = b.status === 'aprovado' && !!b.loja_produto_id;
   if (msg) { msg.style.color = 'var(--text2)'; msg.textContent = 'Salvando...'; }
@@ -6780,158 +6793,259 @@ function capCancelarEdicao() {
 }
 
 var capSubTab = 'lista';
-var _capParadas30List = [];
+
+// ===== ESCOPO: aba Captação (vendedores) × aba Sense =====
+// As duas abas usam as mesmas telas; o escopo decide quais bikes aparecem e onde desenhar.
+var capEscopo = 'vendedores';
+function capNoEscopo(b) { return capEscopo === 'sense' ? b.origem === 'sense' : b.origem !== 'sense'; }
+function capRoot() { return document.getElementById(capEscopo === 'sense' ? 'sense-root' : 'captacao-root'); }
+function capAtualizarContadores() {
+  var vend = capData.filter(function(b){ return b.origem !== 'sense'; });
+  var sen = capData.filter(function(b){ return b.origem === 'sense'; });
+  var novosV = vend.filter(function(b){ return b.status === 'novo'; }).length;
+  var el = document.getElementById('count-captacao');
+  if (el) { el.textContent = vend.length; el.className = 'tab-count' + (novosV > 0 ? ' warn' : ''); }
+  var es = document.getElementById('count-sense');
+  if (es) es.textContent = sen.filter(function(b){ return b.status !== 'vendido' && b.status !== 'reprovado'; }).length;
+}
+
+// ===== CONFIGURAÇÃO: % da Nuflow nas vendas da Sense (fica no Supabase, vale para todos) =====
+var capSensePct = null;
+async function capCarregarConfig() {
+  try {
+    var r = await sbFetch('/rest/v1/painel_config?select=chave,valor&chave=eq.sense_comissao_pct');
+    if (Array.isArray(r) && r[0] && r[0].valor != null) capSensePct = Number(r[0].valor);
+  } catch (e) {}
+}
+async function capSalvarSensePct(input) {
+  var v = capNum(input.value);
+  if (v === null || v < 0 || v > 100) { alert('Informe um percentual entre 0 e 100.'); return; }
+  try {
+    await sbFetch('/rest/v1/painel_config?on_conflict=chave', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ chave: 'sense_comissao_pct', valor: v, atualizado_em: new Date().toISOString() }) });
+    capSensePct = v; drawCap();
+  } catch (e) { alert('Não foi possível salvar: ' + e.message + '\n(O SQL da Análise já foi rodado no Supabase?)'); }
+}
+
+// ===== ANÁLISE =====
+var capPeriodo = '12m';
+var _capCharts = {};
+var CAP_PERIODOS = [['mes', 'Este mês'], ['90d', 'Últimos 90 dias'], ['12m', 'Últimos 12 meses'], ['tudo', 'Tudo']];
+function capInicioPeriodo(p) {
+  var h = new Date();
+  if (p === 'mes') return new Date(h.getFullYear(), h.getMonth(), 1);
+  if (p === '90d') return new Date(h.getTime() - 90 * 86400000);
+  if (p === '12m') return new Date(h.getFullYear() - 1, h.getMonth() + 1, 1);
+  return new Date(2000, 0, 1);
+}
+function capNoPeriodo(d, ini) { return d && new Date(d) >= ini; }
+function capReceitaVenda(b) {
+  var p = capPrecoSite(b); if (!p) return 0;
+  if (b.origem === 'sense') return capSensePct != null ? p * capSensePct / 100 : 0;
+  return capCalcCom(p);
+}
+function capNomeMarca(m) { m = String(m || '').trim(); if (!m) return 'Sem marca'; return m.charAt(0).toUpperCase() + m.slice(1).toLowerCase(); }
+function capFaixaPreco(p) {
+  if (!p) return 'Sem preço';
+  if (p < 5000) return 'Até 5 mil';
+  if (p < 10000) return '5 a 10 mil';
+  if (p < 20000) return '10 a 20 mil';
+  if (p < 30000) return '20 a 30 mil';
+  return 'Acima de 30 mil';
+}
+var CAP_FAIXAS = ['Até 5 mil', '5 a 10 mil', '10 a 20 mil', '20 a 30 mil', 'Acima de 30 mil', 'Sem preço'];
+function capContar(lista, fn) {
+  var m = {}; lista.forEach(function(b){ var k = fn(b); m[k] = (m[k] || 0) + 1; });
+  return Object.keys(m).map(function(k){ return [k, m[k]]; }).sort(function(a, b){ return b[1] - a[1]; });
+}
+function capKpi(rotulo, valor, sub, cor) {
+  return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.1rem .9rem;position:relative;overflow:hidden">' +
+    '<div style="position:absolute;top:0;left:0;right:0;height:2px;background:' + cor + '"></div>' +
+    '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:8px">' + rotulo + '</div>' +
+    '<div style="font-size:21px;font-weight:600;color:var(--text);line-height:1.1">' + valor + '</div>' +
+    (sub ? '<div style="font-size:11px;color:var(--text3);margin-top:5px">' + sub + '</div>' : '') + '</div>';
+}
+function capCaixa(titulo, corpo, extra) {
+  return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;min-width:0' + (extra || '') + '">' +
+    '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">' + titulo + '</div>' + corpo + '</div>';
+}
+function capBarras(itens, total, cor, max) {
+  if (!itens.length) return '<div style="font-size:13px;color:var(--text3)">Sem dados.</div>';
+  return itens.slice(0, max || 8).map(function(it){
+    var pct = total ? Math.round(it[1] / total * 100) : 0;
+    return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:3px">' +
+      '<span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + capEsc(it[0]) + '</span>' +
+      '<span style="font-family:DM Mono,monospace;color:var(--text3);white-space:nowrap">' + it[1] + ' · ' + pct + '%</span></div>' +
+      '<div style="background:var(--bg3);border-radius:4px;height:5px;overflow:hidden"><div style="height:100%;border-radius:4px;background:' + cor + ';width:' + pct + '%"></div></div></div>';
+  }).join('');
+}
+function capMeses12() {
+  var h = new Date(), out = [];
+  for (var i = 11; i >= 0; i--) { var d = new Date(h.getFullYear(), h.getMonth() - i, 1); out.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); }
+  return out;
+}
+function capRotuloMes(k) { var p = k.split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Number(p[1]) - 1] + '/' + p[0].slice(2); }
 
 function drawCapAnalise(root) {
-  var total = capData.length;
-  var porStatus = {};
-  ['novo','em_analise','em_revisao','aprovado','reprovado','vendido'].forEach(function(s){
-    porStatus[s] = capData.filter(function(b){return b.status===s;}).length;
-  });
-  var aprovadas = capData.filter(function(b){return b.status==='aprovado';});
-  var vendidas = capData.filter(function(b){return b.status==='vendido';});
-  var taxaAprov = total > 0 ? Math.round((aprovadas.length/total)*100) : 0;
-  var taxaVenda = aprovadas.length > 0 ? Math.round((vendidas.length/(aprovadas.length+vendidas.length))*100) : 0;
+  var sense = capEscopo === 'sense';
+  var base = capData.filter(capNoEscopo);
+  var ini = capInicioPeriodo(capPeriodo);
+  var nomePer = (CAP_PERIODOS.find(function(p){ return p[0] === capPeriodo; }) || ['', ''])[1].toLowerCase();
 
-  // Por estado
-  var porEstado = {};
-  capData.forEach(function(b){ var e=b.estado||'N/A'; porEstado[e]=(porEstado[e]||0)+1; });
-  var topEstados = Object.entries(porEstado).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
+  var vendidas = base.filter(function(b){ return b.status === 'vendido'; });
+  var aprovadasHist = base.filter(function(b){ return b.status === 'aprovado' || b.status === 'vendido'; });
+  var reprovadas = base.filter(function(b){ return b.status === 'reprovado'; });
+  var anunciadas = base.filter(function(b){ return b.status === 'aprovado'; });
+  var pendentes = base.filter(function(b){ return b.status === 'novo' || b.status === 'em_analise' || b.status === 'em_revisao'; });
+  var estoque = anunciadas.concat(pendentes);
 
-  // Por marca
-  var porMarca = {};
-  capData.forEach(function(b){ var m=b.marca||'N/A'; porMarca[m]=(porMarca[m]||0)+1; });
-  var topMarcas = Object.entries(porMarca).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
-
-  // Ticket médio
-  var comPreco = capData.filter(function(b){return b.preco_pedido;});
-  var ticketMedio = comPreco.length ? Math.round(comPreco.reduce(function(s,b){return s+Number(b.preco_pedido);},0)/comPreco.length) : 0;
-
-  // Por tipo
-  var porTipo = {};
-  capData.forEach(function(b){ var t=b.tipo||'N/A'; porTipo[t]=(porTipo[t]||0)+1; });
-  var topTipos = Object.entries(porTipo).sort(function(a,b){return b[1]-a[1];});
-
-  // Comissão acumulada do mês atual (bikes vendidas)
-  var hoje = new Date();
-  var mesAtual = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
-  var vendidasMes = vendidas.filter(function(b){
-    if (!b.criado_em) return false;
-    var bMes = b.criado_em.substring(0,7);
-    return bMes === mesAtual;
-  });
-  var comissaoMes = vendidasMes.reduce(function(s,b){return s+capCalcCom(b.preco_pedido);},0);
-  var comissaoTotal = vendidas.reduce(function(s,b){return s+capCalcCom(b.preco_pedido);},0);
-
-  // Tempo médio de venda (aprovado → vendido)
-  // Usamos dias desde criado_em como aproximação
-  var comDias = vendidas.filter(function(b){return b.criado_em;});
-  var tempoMedio = comDias.length ? Math.round(comDias.reduce(function(s,b){return s+capDias(b.criado_em);},0)/comDias.length) : 0;
-
+  // No período
+  var recebidasP = base.filter(function(b){ return capNoPeriodo(b.criado_em, ini); });
+  var vendidasP = vendidas.filter(function(b){ return capNoPeriodo(b.vendido_em || b.atualizado_em, ini); });
+  var decididasP = recebidasP.filter(function(b){ return ['aprovado', 'vendido', 'reprovado'].indexOf(b.status) >= 0; });
+  var aprovadasP = recebidasP.filter(function(b){ return b.status === 'aprovado' || b.status === 'vendido'; });
+  var taxaAprov = decididasP.length ? Math.round(aprovadasP.length / decididasP.length * 100) : null;
+  var faturamentoP = vendidasP.reduce(function(s, b){ return s + capPrecoSite(b); }, 0);
+  var receitaP = vendidasP.reduce(function(s, b){ return s + capReceitaVenda(b); }, 0);
+  var ticket = vendidasP.length ? faturamentoP / vendidasP.length : 0;
+  // Tempo até vender: só bikes com datas reais de aprovação e venda
+  var comTempo = vendidas.filter(function(b){ return b.aprovado_em && b.vendido_em && new Date(b.vendido_em) > new Date(b.aprovado_em); });
+  var tempoMedio = comTempo.length ? Math.round(comTempo.reduce(function(s, b){ return s + (new Date(b.vendido_em) - new Date(b.aprovado_em)) / 86400000; }, 0) / comTempo.length) : null;
+  var paradas = anunciadas.filter(function(b){ return capDias(b.aprovado_em || b.publicado_em || b.criado_em) > 30; });
+  var valorEstoque = estoque.reduce(function(s, b){ return s + capPrecoSite(b); }, 0);
+  var semData = vendidas.filter(function(b){ return !b.vendido_em; }).length;
 
   var h = '';
-
-  // Sub-tabs header
-  var tabLista2 = 'border-bottom:2px solid transparent;color:var(--text3)';
-  var tabAnalise2 = 'border-bottom:2px solid var(--green);color:var(--text)';
-  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
-  h += '<div><div style="font-size:20px;font-weight:600">Captação remota</div>';
-  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">Bikes enviadas pelo formulário online</div></div>';
-  h += '<button class="btn btn-primary btn-sm" onclick="loadCapData()">↻ Atualizar</button></div>';
-  h += '<div style="display:flex;gap:8px;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0">';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabLista2 + '" onclick="capSetSubTab(0)">&#128203; Submiss&#245;es</button>';
-  h += '<button style="padding:10px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:DM Sans,sans-serif;' + tabAnalise2 + '" onclick="capSetSubTab(1)">&#128202; An&#225;lise</button>';
+  // Período
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:1rem;align-items:center"><span style="font-size:12px;color:var(--text3);margin-right:4px">Período:</span>';
+  CAP_PERIODOS.forEach(function(p){
+    h += '<button class="btn btn-sm" style="' + (capPeriodo === p[0] ? 'background:var(--bg4);color:var(--text);border-color:var(--green)' : '') + '" onclick="capPeriodo=\x27' + p[0] + '\x27;drawCap()">' + p[1] + '</button>';
+  });
   h += '</div>';
 
+  if (sense) {
+    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem 1.25rem;margin-bottom:1rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px">' +
+      '<span>Receita da Nuflow por bike Sense vendida:</span>' +
+      '<input id="cap-sense-pct" inputmode="decimal" style="width:70px" value="' + (capSensePct != null ? capSensePct : '') + '" placeholder="%">' +
+      '<span>% do preço de venda</span><button class="btn btn-sm btn-teal" onclick="capSalvarSensePct(document.getElementById(\x27cap-sense-pct\x27))">Salvar</button>' +
+      (capSensePct == null ? '<span style="color:var(--amber)">⚠️ Defina para calcular a receita.</span>' : '') + '</div>';
+  }
 
   // KPIs
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:2rem">';
-  var kpis = [
-    {l:'TOTAL RECEBIDAS', v:total, c:'var(--blue)'},
-    {l:'APROVADAS', v:aprovadas.length, c:'var(--green)'},
-    {l:'TAXA APROVAÇÃO', v:taxaAprov+'%', c:'var(--teal)'},
-    {l:'VENDIDAS', v:vendidas.length, c:'var(--purple)'},
-    {l:'TICKET MÉDIO', v:capFmtR(ticketMedio), c:'var(--amber)'},
-    {l:'COMISSÃO NO MÊS', v:capFmtR(comissaoMes), s:'mês atual', c:'var(--teal)'},
-    {l:'COMISSÃO TOTAL', v:capFmtR(comissaoTotal), s:'acumulado', c:'var(--green)'},
-    {l:'TEMPO MÉDIO VENDA', v:tempoMedio ? tempoMedio+'d' : '—', s:'dias até vender', c:'var(--purple)'}
-  ];
-  kpis.forEach(function(k){
-    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;position:relative;overflow:hidden">';
-    h += '<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+k.c+'"></div>';
-    h += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:8px">'+k.l+'</div>';
-    h += '<div style="font-size:22px;font-weight:600;color:var(--text)">'+k.v+'</div></div>';
-  });
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:1.5rem">';
+  if (sense) {
+    h += capKpi('Em estoque', estoque.length, capFmtR(valorEstoque) + ' em bikes', 'var(--blue)');
+    h += capKpi('Anunciadas na loja', anunciadas.filter(function(b){ return b.loja_produto_id; }).length, anunciadas.filter(function(b){ return !b.loja_produto_id; }).length + ' aprovadas fora da loja', 'var(--green)');
+    h += capKpi('A publicar', pendentes.length, base.filter(function(b){ return pendentes.indexOf(b) >= 0 && !capFotos(b).length; }).length + ' sem fotos', 'var(--amber)');
+    h += capKpi('Entraram', recebidasP.length, nomePer, 'var(--text2)');
+  } else {
+    h += capKpi('Recebidas', recebidasP.length, nomePer, 'var(--blue)');
+    h += capKpi('Taxa de aprovação', taxaAprov == null ? '—' : taxaAprov + '%', decididasP.length ? aprovadasP.length + ' de ' + decididasP.length + ' decididas' : 'nenhuma decidida', 'var(--teal)');
+    h += capKpi('Anunciadas agora', anunciadas.length, capFmtR(anunciadas.reduce(function(s, b){ return s + capPrecoSite(b); }, 0)) + ' em bikes', 'var(--green)');
+    h += capKpi('Aguardando você', pendentes.length, base.filter(function(b){ return b.status === 'em_revisao'; }).length + ' em revisão com o vendedor', 'var(--amber)');
+  }
+  h += capKpi('Vendidas', vendidasP.length, nomePer, 'var(--purple)');
+  h += capKpi(sense ? 'Faturamento Sense' : 'Valor vendido', capFmtR(faturamentoP), vendidasP.length ? 'ticket ' + capFmtR(ticket) : nomePer, 'var(--blue)');
+  h += capKpi('Receita Nuflow', (sense && capSensePct == null) ? '—' : capFmtR(receitaP), sense ? (capSensePct != null ? capSensePct + '% das vendas' : 'defina o %') : 'comissão 10% (mín. 800, máx. 5 mil)', 'var(--green)');
+  h += capKpi('Tempo até vender', tempoMedio == null ? '—' : tempoMedio + (tempoMedio === 1 ? ' dia' : ' dias'), tempoMedio == null ? 'sem vendas com datas completas' : 'da aprovação à venda · ' + comTempo.length + ' bike(s)', 'var(--purple)');
+  h += capKpi('Paradas +30 dias', paradas.length, 'anunciadas há mais de 30 dias', paradas.length ? 'var(--amber)' : 'var(--green)');
   h += '</div>';
 
-  // Funil
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.5rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Funil de captação</div>';
-  var funil = [
-    ['Recebidas', total, 'var(--text2)'],
-    ['Em análise', porStatus.em_analise, 'var(--blue)'],
-    ['Em revisão', porStatus.em_revisao, 'var(--amber)'],
-    ['Aprovadas', porStatus.aprovado, 'var(--green)'],
-    ['Vendidas', porStatus.vendido, 'var(--purple)'],
-    ['Reprovadas', porStatus.reprovado, 'var(--red)']
-  ];
-  funil.forEach(function(f){
-    var pct = total > 0 ? Math.round((f[1]/total)*100) : 0;
-    h += '<div style="margin-bottom:10px">';
-    h += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">';
-    h += '<span style="color:var(--text2)">'+capEsc(f[0])+'</span>';
-    h += '<span style="font-family:DM Mono,monospace;color:'+f[2]+'">'+f[1]+' ('+pct+'%)</span></div>';
-    h += '<div style="background:var(--bg3);border-radius:4px;height:6px;overflow:hidden">';
-    h += '<div style="height:100%;border-radius:4px;background:'+f[2]+';width:'+pct+'%;transition:width .4s"></div>';
-    h += '</div></div>';
-  });
+  // Evolução mensal (gráficos)
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:1.5rem">';
+  h += capCaixa('Evolução mensal · ' + (sense ? 'entradas' : 'recebidas') + ' × vendidas', '<div style="position:relative;height:230px"><canvas id="cap-ch-volume"></canvas></div>');
+  h += capCaixa('Receita Nuflow por mês', '<div style="position:relative;height:230px"><canvas id="cap-ch-receita"></canvas></div>');
   h += '</div>';
 
-  // Por estado + por marca
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">';
-
-  // Estados
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Top estados</div>';
-  topEstados.forEach(function(e){
-    var pct = total > 0 ? Math.round((e[1]/total)*100) : 0;
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    h += '<span style="font-size:13px;color:var(--text2)">'+capEsc(e[0])+'</span>';
-    h += '<div style="display:flex;align-items:center;gap:8px">';
-    h += '<div style="width:60px;background:var(--bg3);border-radius:4px;height:4px"><div style="height:100%;border-radius:4px;background:var(--blue);width:'+pct+'%"></div></div>';
-    h += '<span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text3);min-width:20px;text-align:right">'+e[1]+'</span>';
-    h += '</div></div>';
-  });
+  // Funil (acumulado) + faixas de preço
+  var recebidasTot = base.length;
+  var funil = [['Recebidas', recebidasTot], ['Decididas', aprovadasHist.length + reprovadas.length], ['Aprovadas', aprovadasHist.length], ['Vendidas', vendidas.length]];
+  var corpoFunil = funil.map(function(f, i){
+    var pct = recebidasTot ? Math.round(f[1] / recebidasTot * 100) : 0;
+    var conv = i > 0 && funil[i - 1][1] ? Math.round(f[1] / funil[i - 1][1] * 100) + '% da etapa anterior' : '';
+    return '<div style="margin-bottom:11px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text2)">' + f[0] + '</span>' +
+      '<span style="font-family:DM Mono,monospace;color:var(--text3)">' + f[1] + (conv ? ' · ' + conv : '') + '</span></div>' +
+      '<div style="background:var(--bg3);border-radius:4px;height:7px;overflow:hidden"><div style="height:100%;background:' + ['var(--text2)', 'var(--blue)', 'var(--green)', 'var(--purple)'][i] + ';width:' + pct + '%"></div></div></div>';
+  }).join('') + '<div style="font-size:11px;color:var(--text3);margin-top:6px">Todas as bikes desde o início. Reprovadas: ' + reprovadas.length + ' · pendentes: ' + pendentes.length + '.</div>';
+  var faixas = capContar(estoque, function(b){ return capFaixaPreco(capPrecoSite(b)); }).sort(function(a, b){ return CAP_FAIXAS.indexOf(a[0]) - CAP_FAIXAS.indexOf(b[0]); });
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:1.5rem">';
+  h += capCaixa('Funil', corpoFunil);
+  h += capCaixa('Estoque por faixa de preço', capBarras(faixas, estoque.length, 'var(--teal)', 6));
   h += '</div>';
 
-  // Marcas
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Top marcas</div>';
-  topMarcas.forEach(function(m){
-    var pct = total > 0 ? Math.round((m[1]/total)*100) : 0;
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    h += '<span style="font-size:13px;color:var(--text2)">'+capEsc(m[0])+'</span>';
-    h += '<div style="display:flex;align-items:center;gap:8px">';
-    h += '<div style="width:60px;background:var(--bg3);border-radius:4px;height:4px"><div style="height:100%;border-radius:4px;background:var(--green);width:'+pct+'%"></div></div>';
-    h += '<span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text3);min-width:20px;text-align:right">'+m[1]+'</span>';
-    h += '</div></div>';
-  });
-  h += '</div>';
+  // Distribuições
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:1.5rem">';
+  h += capCaixa('Marcas (todas as bikes)', capBarras(capContar(base, function(b){ return capNomeMarca(b.marca); }), base.length, 'var(--green)'));
+  if (sense) {
+    h += capCaixa('Modelos em estoque', capBarras(capContar(estoque, function(b){ return [b.marca, b.modelo].filter(Boolean).join(' ') || '—'; }), estoque.length, 'var(--blue)'));
+    h += capCaixa('Condição em estoque', capBarras(capContar(estoque, function(b){ return b.condicao_origem === 'NOVA' ? 'Nova' : 'Usada'; }), estoque.length, 'var(--purple)'));
+    var semFicha = estoque.filter(function(b){ return !['suspensao', 'freios', 'relacao', 'outros_componentes'].some(function(k){ return b[k] && String(b[k]).trim(); }); }).length;
+    h += capCaixa('Prontas para vender?', capBarras([['Com fotos', estoque.filter(function(b){ return capFotos(b).length; }).length], ['Com ficha técnica', estoque.length - semFicha], ['Na loja', anunciadas.filter(function(b){ return b.loja_produto_id; }).length]], estoque.length, 'var(--teal)'));
+  } else {
+    var comEstado = base.filter(function(b){ return b.estado; });
+    h += capCaixa('Estados de origem', capBarras(capContar(comEstado, function(b){ return String(b.estado).toUpperCase(); }), comEstado.length, 'var(--blue)') +
+      (base.length - comEstado.length ? '<div style="font-size:11px;color:var(--text3);margin-top:6px">' + (base.length - comEstado.length) + ' sem estado informado.</div>' : ''));
+    h += capCaixa('Tipo de bike', capBarras(capContar(base.filter(function(b){ return b.tipo; }), function(b){ return capNomeMarca(b.tipo); }), base.filter(function(b){ return b.tipo; }).length, 'var(--purple)'));
+    h += capCaixa('Motivos de revisão', capBarras(capContar([].concat.apply([], base.map(function(b){ return capMotivos(b); })).map(function(m){ return { m: m }; }), function(x){ return capMotivoLabel(x.m); }),
+      [].concat.apply([], base.map(function(b){ return capMotivos(b); })).length, 'var(--amber)'));
+  }
   h += '</div>';
 
-  // Por tipo
-  h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.5rem">';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace;margin-bottom:1rem">Por tipo de bike</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-  topTipos.forEach(function(t){
-    h += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:12px">';
-    h += '<span style="color:var(--text2)">'+capEsc(t[0])+'</span> <span style="font-family:DM Mono,monospace;color:var(--text3)">'+t[1]+'</span>';
-    h += '</div>';
-  });
-  h += '</div></div>';
+  // Paradas há mais tempo
+  var maisParadas = anunciadas.slice().sort(function(a, b){ return capDias(b.aprovado_em || b.criado_em) - capDias(a.aprovado_em || a.criado_em); }).slice(0, 10);
+  if (maisParadas.length) {
+    h += capCaixa('Anunciadas há mais tempo', '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>' +
+      maisParadas.map(function(b){
+        var d = capDias(b.aprovado_em || b.criado_em);
+        return '<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="capDetalhe=\x27' + capEsc(b.id) + '\x27;capSubTab=\x27lista\x27;drawCap()">' +
+          '<td style="padding:7px 4px">' + capEsc([b.marca, b.modelo, b.ano].filter(Boolean).join(' ')) + (b.tamanho ? ' <span style="color:var(--text3)">· ' + capEsc(b.tamanho) + '</span>' : '') + '</td>' +
+          '<td style="padding:7px 4px;text-align:right;white-space:nowrap">' + capFmtR(capPrecoSite(b)) + '</td>' +
+          '<td style="padding:7px 4px;text-align:right;white-space:nowrap;color:' + (d > 30 ? 'var(--amber)' : 'var(--text3)') + ';font-family:DM Mono,monospace">' + d + 'd</td></tr>';
+      }).join('') + '</tbody></table></div>', ';margin-bottom:1.5rem');
+  }
 
-  root.innerHTML = h;
+  if (semData) h += '<div style="font-size:12px;color:var(--text3);margin-bottom:1.5rem">ℹ️ ' + semData + ' venda(s) sem data registrada: rode o SQL da Análise no Supabase para usar a melhor data disponível.</div>';
+  h += '<div style="font-size:11px;color:var(--text3);margin-bottom:2rem">Vendas e receita contam pela data da venda. Bikes vendidas antes desta versão usam a data da última atualização como aproximação e ficam fora do "tempo até vender".</div>';
+
+  root.innerHTML = capCabecalho() + h;
+  capDesenharGraficos(base, sense);
 }
+
+function capDesenharGraficos(base, sense) {
+  if (typeof Chart === 'undefined') return;
+  Object.keys(_capCharts).forEach(function(k){ try { _capCharts[k].destroy(); } catch (e) {} });
+  _capCharts = {};
+  var meses = capMeses12();
+  var porMes = function(lista, campo, valor){
+    var m = {}; meses.forEach(function(k){ m[k] = 0; });
+    lista.forEach(function(b){ var d = b[campo] || (campo === 'vendido_em' ? b.atualizado_em : null); if (!d) return; var k = String(d).slice(0, 7); if (k in m) m[k] += valor ? valor(b) : 1; });
+    return meses.map(function(k){ return Math.round(m[k] * 100) / 100; });
+  };
+  var vendidas = base.filter(function(b){ return b.status === 'vendido'; });
+  var eixo = { ticks: { color: '#777', font: { family: 'DM Mono', size: 10 } }, grid: { color: '#1e1e1e' } };
+  var labels = meses.map(capRotuloMes);
+  var c1 = document.getElementById('cap-ch-volume');
+  if (c1) _capCharts.volume = new Chart(c1, {
+    type: 'bar',
+    data: { labels: labels, datasets: [
+      { label: sense ? 'Entradas' : 'Recebidas', data: porMes(base, 'criado_em'), backgroundColor: '#4fc3f7aa', borderRadius: 4 },
+      { label: 'Vendidas', data: porMes(vendidas, 'vendido_em'), backgroundColor: '#b388ffcc', borderRadius: 4 }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#999', font: { family: 'DM Sans', size: 12 } } } },
+      scales: { x: eixo, y: Object.assign({ beginAtZero: true }, eixo, { ticks: { color: '#777', precision: 0, font: { family: 'DM Mono', size: 10 } } }) } }
+  });
+  var c2 = document.getElementById('cap-ch-receita');
+  if (c2) _capCharts.receita = new Chart(c2, {
+    type: 'line',
+    data: { labels: labels, datasets: [{ label: 'Receita Nuflow (R$)', data: porMes(vendidas, 'vendido_em', capReceitaVenda), borderColor: '#00e676', backgroundColor: '#00e67622', fill: true, tension: .3, pointRadius: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: function(c){ return 'R$ ' + Math.round(c.parsed.y).toLocaleString('pt-BR'); } } } },
+      scales: { x: eixo, y: Object.assign({ beginAtZero: true }, eixo, { ticks: { color: '#777', font: { family: 'DM Mono', size: 10 }, callback: function(v){ return v >= 1000 ? 'R$' + Math.round(v / 1000) + 'k' : 'R$' + v; } } }) } }
+  });
+}
+
+var _capParadas30List = [];
+
 
 // Push notifications
 function capRequestNotifPermission(){
@@ -6945,14 +7059,14 @@ function capSendNotif(titulo,corpo){
 
 async function capChecarNovas() {
   try {
-    var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=id,status,marca,modelo,nome&limit=1');
+    var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=id,status,marca,modelo,nome,origem&limit=1');
     if (!Array.isArray(data) || data.length === 0) return;
     // Compara o ID do envio mais recente (antes comparava uma contagem que só podia ser 0 ou 1)
     var b = data[0];
     if (_capUltimoId === null) { _capUltimoId = b.id; return; }
     if (b.id !== _capUltimoId) {
       _capUltimoId = b.id;
-      if (b.status === 'novo') {
+      if (b.status === 'novo' && b.origem !== 'sense') {
         capSendNotif('Nova bike recebida! 🚲', (b.marca||'')+ ' ' +(b.modelo||'')+' — '+(b.nome||''));
       }
       await loadCapData();
@@ -6961,6 +7075,7 @@ async function capChecarNovas() {
 }
 
 window.renderCaptacao=function(){
+  if (capEscopo !== 'vendedores') { capEscopo = 'vendedores'; capDetalhe = null; capEditando = false; capFilter = 'todos'; }
   capRequestNotifPermission();
   if(!capLoaded){
     loadCapData().then(function(ok){
@@ -6974,6 +7089,11 @@ window.renderCaptacao=function(){
       window._capPollInterval=setInterval(capChecarNovas,60000);
     }
   }
+};
+window.renderSense=function(){
+  if (capEscopo !== 'sense') { capEscopo = 'sense'; capDetalhe = null; capEditando = false; capFilter = 'todos'; }
+  capCarregarConfig().then(function(){ if (capLoaded) drawCap(); });
+  if (!capLoaded) loadCapData(); else drawCap();
 };
 window.capUpdateStatus=capUpdateStatus;
 window.capDelete=capDelete;
