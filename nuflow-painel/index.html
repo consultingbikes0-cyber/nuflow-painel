@@ -2774,8 +2774,7 @@ window.estornarVenda=async function(id){
 
 // ===== ZAPSIGN =====
 // ===== D4SIGN CONFIG =====
-const D4SIGN_TOKEN='live_a7844d783cfa5c917c439bc61ff80e33547e16928ba6436b10768166fbf774d6';
-const D4SIGN_CRYPT='live_crypt_reOPJIQuEp8ds5GhUpSeD4Lov2qq7CRD';
+// Credenciais da D4Sign ficam só na função do Netlify (d4sign.js), nunca na página.
 const D4SIGN_COFRE='dc63f800-5ee4-40f0-8ad1-d65f5d95cfa5';
 const D4SIGN_API='https://secure.d4sign.com.br/api/v1';
 const NUFLOW_EMAIL='gestao@nuflow.com.br';
@@ -5490,6 +5489,7 @@ function drawCapLista(root) {
       h += '<div class="bike-sub-info">'+(capEsc(b.tipo)||'')+' · '+(capEsc(b.tamanho)||'')+' · '+(capEsc(b.cidade)||'')+'-'+(capEsc(b.estado)||'')+'</div>';
       h += '</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">';
       h += '<span class="badge" style="background:'+cor+'20;color:'+cor+'">'+(CAP_LABELS[b.status]||b.status)+'</span>';
+      if (b.loja_produto_id && b.status==='aprovado') h += '<span class="badge" style="background:var(--bg3);color:var(--teal)">🛒 Na loja</span>';
       h += '<span style="font-size:11px;color:'+diasCor+';font-family:DM Mono,monospace">'+diasLbl+'</span>';
       h += '</div></div>';
       h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:4px">';
@@ -5550,16 +5550,25 @@ async function capSalvar(id, campos) {
   window.capData = capData;
 }
 
+// ---------- Título do anúncio (mesmo padrão da loja) ----------
+// "MARCA MODELO - TAMANHO X - ANO - UF". A função publicar-loja usa a mesma regra.
+function capTituloLoja(b) {
+  var up = function(v){ return String(v || '').trim().toUpperCase(); };
+  var partes = [(up(b.marca) + ' ' + up(b.modelo)).trim()];
+  if (b.tamanho) partes.push('TAMANHO ' + up(b.tamanho));
+  if (b.ano) partes.push(String(b.ano).trim());
+  if (b.estado) partes.push(up(b.estado));
+  return partes.join(' - ').replace(/\s+/g, ' ');
+}
+
 // ---------- Descrição do anúncio (HTML que vai para a loja) ----------
+// Sem preço (o preço fica só no campo da loja, para não desatualizar) e com a localização da bike.
 function capGerarDescricao(b) {
   var e = capEsc;
-  var marca = String(b.marca || '').toUpperCase();
-  var modelo = String(b.modelo || '').toUpperCase();
-  var ano = b.ano || '', tam = b.tamanho || '';
-  var titulo = (marca + ' ' + modelo + (ano ? ' - ' + ano : '') + (tam ? ' - TAMANHO ' + String(tam).toUpperCase() : '')).trim();
+  var tam = b.tamanho || '';
+  var titulo = capTituloLoja(b);
   var tipoLabel = b.tipo ? String(b.tipo).toUpperCase() : 'MTB';
-  var precoN = capPrecoSite(b);
-  var preco = precoN ? 'R$ ' + precoN.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
+  var local = [String(b.cidade || '').trim(), String(b.estado || '').trim().toUpperCase()].filter(Boolean).join(' - ');
 
   var comp = [];
   if (b.suspensao) comp.push(['Suspensão', b.suspensao]);
@@ -5588,13 +5597,16 @@ function capGerarDescricao(b) {
 '    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#b37800;margin:0 0 6px 0;">⚠️ Condição da Bike</p>\n' +
 '    <p style="font-size:13px;color:#333333;line-height:1.6;margin:0;">' + condTxt + '</p>\n' +
 '  </div>\n' +
+(local ?
+'  <div style="background:#f8f8f8;border:2px solid #111111;margin:2px 0;padding:12px 20px;">\n' +
+'    <p style="font-size:13px;color:#111111;font-weight:600;margin:0 0 2px 0;">📍 Bike localizada em ' + e(local) + '</p>\n' +
+'    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Entrega para todo o Brasil, com toda a negociação intermediada pela Nuflow.</p>\n' +
+'  </div>\n' : '') +
 '  <div style="background:#f0f5ee;border:2px solid #111111;margin:2px 0;padding:14px 20px;">\n' +
 '    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 4px 0;">✅ Laudo técnico antes da entrega</p>\n' +
 '    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Antes de seguir para você, esta bike passa por um laudo técnico completo na Nuflow: quadro, suspensões, freios, transmissão e rodas. Qualquer ajuste necessário é feito nesse momento, pouco antes do envio. Assim ela chega pronta para pedalar, sem o desgaste de ficar parada depois da revisão.</p>\n' +
 '  </div>\n' +
 '  <div style="background:#f8f8f8;border-top:2px solid #202d18;margin:2px 0 0 0;padding:16px 20px;">\n' +
-'    <p style="font-size:11px;color:#888888;letter-spacing:1px;text-transform:uppercase;margin:0 0 4px 0;">Preço</p>\n' +
-'    <p style="font-size:26px;font-weight:900;color:#202d18;margin:0 0 12px 0;font-family:monospace;">' + preco + '</p>\n' +
 '    <div style="background:#202d18;padding:10px 16px;border-radius:3px;display:inline-block;">\n' +
 '      <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#ffffff;margin:0 0 2px 0;">COMPRA SOMENTE PELO WHATSAPP</p>\n' +
 '      <p style="font-size:11px;color:rgba(255,255,255,0.65);margin:0;">Laudo técnico antes da entrega + curadoria Nuflow + entrega nacional</p>\n' +
@@ -5632,6 +5644,13 @@ function drawCapDetalhe(b) {
   h += '<div><div style="font-size:22px;font-weight:600">' + capEsc(b.marca) + ' ' + capEsc(b.modelo) + ' ' + capEsc(b.ano) + '</div>';
   h += '<div style="font-size:13px;color:var(--text3);margin-top:4px;font-family:DM Mono,monospace">Enviado ' + capFmtDate(b.criado_em) + ' · ' + dias + ' dias atrás' + (b.atualizado_em ? ' · editado ' + capFmtDate(b.atualizado_em) : '') + '</div></div>';
   h += '<span class="badge" style="background:' + cor + '20;color:' + cor + ';font-size:13px;padding:6px 14px">' + capEsc(CAP_LABELS[b.status] || b.status) + '</span></div>';
+
+  // Situação na Loja Integrada
+  if (b.loja_produto_id) {
+    h += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:.75rem 1.25rem;margin-bottom:1.25rem;font-size:13px">🛒 Na Loja Integrada · produto <b>' + capEsc(b.loja_produto_id) + '</b>' + (b.publicado_em ? ' · publicado/atualizado ' + capFmtDate(b.publicado_em) : '') + '</div>';
+  } else if (b.status === 'aprovado') {
+    h += '<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:var(--radius);padding:.75rem 1.25rem;margin-bottom:1.25rem;font-size:13px;color:var(--amber)">⚠️ Aprovado, mas ainda não está na Loja Integrada. Use o botão "🛒 Publicar na loja".</div>';
+  }
 
   // Pendências de revisão
   if (b.status === 'em_revisao') {
@@ -5693,6 +5712,8 @@ function drawCapDetalhe(b) {
   if (st === 'novo' || st === 'em_analise' || st === 'em_revisao') h += '<button class="btn btn-sm" style="color:var(--green);border-color:var(--green-dim)" onclick="capMudarStatus(\x27' + bid + '\x27,\x27aprovado\x27)">✅ Aprovar</button>';
   if (st === 'novo' || st === 'em_analise' || st === 'em_revisao' || st === 'aprovado') h += '<button class="btn btn-sm btn-danger" onclick="capMudarStatus(\x27' + bid + '\x27,\x27reprovado\x27)">❌ Reprovar</button>';
   if (st === 'aprovado') h += '<button class="btn btn-sm" style="color:var(--purple);border-color:var(--purple-dim)" onclick="capMudarStatus(\x27' + bid + '\x27,\x27vendido\x27)">💰 Vendida</button>';
+  if (st === 'aprovado') h += '<button class="btn btn-sm btn-teal" onclick="capPublicarLoja(\x27' + bid + '\x27,false)">' + (b.loja_produto_id ? '🔄 Atualizar na loja' : '🛒 Publicar na loja') + '</button>';
+  if (st !== 'aprovado' && b.loja_produto_id) h += '<button class="btn btn-sm" onclick="capDesativarLoja(\x27' + bid + '\x27,false)">🚫 Tirar da loja</button>';
   if (wppNum) {
     var msgOk = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e temos interesse! Podemos conversar?');
     var msgNao = encodeURIComponent('Olá ' + nome1 + '! Sou da Nuflow Bikes. Analisamos sua ' + (b.marca || '') + ' ' + (b.modelo || '') + ' e infelizmente não se encaixa no nosso perfil no momento. Obrigado pelo contato!');
@@ -5710,19 +5731,104 @@ function drawCapDetalhe(b) {
 function capFecharDetalhe() { capDetalhe = null; capEditando = false; capRevisaoAberta = false; drawCap(); }
 
 async function capMudarStatus(id, status) {
+  var b = capBike(id);
   var campos = { status: status };
   if (status === 'aprovado') {
+    if (b && !capPrecoSite(b)) { alert('Defina o preço no site (✏️ Editar anúncio) antes de aprovar.'); return; }
+    if (b && !capFotos(b).length) { alert('Adicione pelo menos uma foto antes de aprovar.'); return; }
+    if (!confirm('Aprovar e publicar este anúncio na Loja Integrada?')) return;
     // Ao aprovar, grava a descrição final gerada a partir dos dados editados
-    var b = capBike(id);
     if (b) campos.descricao_gerada = capGerarDescricao(b);
   }
+  var tinhaNaLoja = !!(b && b.loja_produto_id);
   try {
     await capSalvar(id, campos);
     capDetalhe = id; capRevisaoAberta = false;
     drawCap();
   } catch (e) {
     alert('Não foi possível mudar o status: ' + e.message);
+    return;
   }
+  // Loja Integrada: aprovar publica; vendida ou reprovada tira do ar
+  if (status === 'aprovado') await capPublicarLoja(id, true);
+  else if ((status === 'vendido' || status === 'reprovado') && tinhaNaLoja) await capDesativarLoja(id, true);
+}
+
+// ---------- Loja Integrada (via função publicar-loja no Netlify) ----------
+var capLojaOcupado = false;
+function capAvisoLoja(texto, cor) {
+  var el = document.getElementById('cap-loja-aviso');
+  if (!texto) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'cap-loja-aviso';
+    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;max-width:92vw;padding:12px 18px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);box-shadow:0 8px 30px #0008;font-size:13px;font-weight:500';
+    document.body.appendChild(el);
+  }
+  el.style.color = cor || 'var(--text)';
+  el.textContent = texto;
+}
+
+async function capChamarLoja(acao, id) {
+  var tok = await sbToken();
+  if (!tok) { if (window.nfShowLogin) window.nfShowLogin('Sua sessão expirou. Entre novamente.'); throw new Error('Sessão expirada'); }
+  var res = await fetch('/.netlify/functions/publicar-loja', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+    body: JSON.stringify({ id: id, acao: acao })
+  });
+  var j = {}; try { j = await res.json(); } catch (e) {}
+  if (!res.ok || !j.ok) throw new Error(j.erro || ('HTTP ' + res.status));
+  return j;
+}
+
+async function capRecarregarCap(id) {
+  try {
+    var data = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+    capData = Array.isArray(data) ? data : capData; window.capData = capData;
+  } catch (e) {}
+  capDetalhe = id; drawCap();
+}
+
+async function capPublicarLoja(id, automatico) {
+  if (capLojaOcupado) return;
+  var b = capBike(id); if (!b) return;
+  if (!automatico && !confirm(b.loja_produto_id ? 'Atualizar o anúncio na loja com os dados atuais?' : 'Publicar este anúncio na Loja Integrada?')) return;
+  capLojaOcupado = true;
+  capAvisoLoja('🛒 ' + (b.loja_produto_id ? 'Atualizando' : 'Publicando') + ' na Loja Integrada... (pode levar até 20s)');
+  try {
+    if (!automatico) await capSalvar(id, { descricao_gerada: capGerarDescricao(b) }); // descrição sempre atual
+    var r = await capChamarLoja('publicar', id);
+    capAvisoLoja('');
+    var msg = (r.novo ? '✅ Publicado na loja' : '✅ Anúncio atualizado na loja') + ' (produto ' + r.produto_id + ').';
+    if (r.novo) msg += '\n' + r.fotos_enviadas + ' foto(s) enviada(s).';
+    if (!r.ativo) msg += '\n\nEle está DESATIVADO para você conferir no admin da loja (Catálogo > Produtos) e ativar.';
+    if (r.url) msg += '\n\nEndereço: ' + r.url;
+    if (r.avisos && r.avisos.length) msg += '\n\n⚠️ Atenção:\n• ' + r.avisos.join('\n• ');
+    alert(msg);
+  } catch (e) {
+    capAvisoLoja('');
+    alert('❌ Não foi possível publicar na loja: ' + e.message + '\n\nO status no painel foi salvo. Tente de novo pelo botão "🛒 Publicar na loja".');
+  }
+  capLojaOcupado = false;
+  await capRecarregarCap(id);
+}
+
+async function capDesativarLoja(id, automatico) {
+  if (capLojaOcupado) return;
+  if (!automatico && !confirm('Tirar este anúncio do ar na Loja Integrada?')) return;
+  capLojaOcupado = true;
+  capAvisoLoja('🛒 Tirando o anúncio do ar na loja...');
+  try {
+    await capChamarLoja('desativar', id);
+    capAvisoLoja('✅ Anúncio desativado na loja.', 'var(--green)');
+    setTimeout(function(){ capAvisoLoja(''); }, 4000);
+  } catch (e) {
+    capAvisoLoja('');
+    alert('❌ Não foi possível desativar na loja: ' + e.message + '\n\nDesative manualmente no admin da loja.');
+  }
+  capLojaOcupado = false;
+  await capRecarregarCap(id);
 }
 
 // ---------- Pedir revisão ----------
@@ -5902,6 +6008,8 @@ async function capSalvarEdicao(id, aprovar) {
   // Descrição final sempre gerada a partir do que você editou
   campos.descricao_gerada = capGerarDescricao(Object.assign({}, b, campos));
   if (aprovar) campos.status = 'aprovado';
+  if (aprovar && !confirm('Salvar, aprovar e publicar este anúncio na Loja Integrada?')) return;
+  var jaNaLoja = b.status === 'aprovado' && !!b.loja_produto_id;
   if (msg) { msg.style.color = 'var(--text2)'; msg.textContent = 'Salvando...'; }
   try {
     await capSalvar(id, campos);
@@ -5910,7 +6018,11 @@ async function capSalvarEdicao(id, aprovar) {
     window.scrollTo(0, 0);
   } catch (e) {
     if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Não foi possível salvar: ' + e.message; }
+    return;
   }
+  // Loja Integrada: aprovar publica; editar um anúncio que já está na loja oferece atualizar
+  if (aprovar) await capPublicarLoja(id, true);
+  else if (jaNaLoja && confirm('Alterações salvas. Atualizar também o anúncio na Loja Integrada?\n(Textos, preço e categoria. As fotos da loja não mudam.)')) await capPublicarLoja(id, true);
 }
 
 function capCancelarEdicao() {
