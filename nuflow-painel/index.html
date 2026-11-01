@@ -5383,10 +5383,472 @@ function capDias(d) { return d ? Math.floor((new Date()-new Date(d))/86400000) :
 function capFmtR(v) { return 'R$ '+Math.round(Number(v)).toLocaleString('pt-BR'); }
 function capFmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'; }
 
+// ===== IMPORTAÇÃO DA PLANILHA DA SENSE: leitura e limpeza =====
+// Lê a planilha de controle da Sense (COD, MODELO, TAM, CONDIÇÃO, OBS, PREÇO, LINK FOTOS)
+// e transforma cada linha num anúncio com marca, modelo, ano e cor separados.
+var SENSE_CORES = {
+  AZL: 'Azul', AZUL: 'Azul', CZA: 'Cinza', CINZA: 'Cinza', PTO: 'Preto', PRETO: 'Preto', PTA: 'Prata', PRATA: 'Prata',
+  BCO: 'Branco', BRANCO: 'Branco', VDE: 'Verde', VRD: 'Verde', VERDE: 'Verde', MRM: 'Marrom', MARROM: 'Marrom',
+  DRD: 'Dourado', DOURADO: 'Dourado', CRM: 'Creme', CREME: 'Creme', ALUM: 'Alumínio', ALUMINIO: 'Alumínio',
+  AQUA: 'Aqua', MARINHO: 'Marinho', VERMELHO: 'Vermelho', VML: 'Vermelho', AMARELO: 'Amarelo', LARANJA: 'Laranja', ROXO: 'Roxo', ROSA: 'Rosa'
+};
+// Siglas que ficam em maiúsculas no nome do modelo
+var SENSE_SIGLAS = { AL: 1, SL: 1, EVO: 1, V2: 1, V3: 1, GR: 1, R: 1, XC: 1, RS: 1 };
+// Palavras da coluna OBS que voltam a ter a grafia certa depois de sair das maiúsculas
+var SENSE_PALAVRAS = {
+  sense: 'Sense', swift: 'Swift', schwalbe: 'Schwalbe', michelin: 'Michelin', shimano: 'Shimano', sram: 'SRAM',
+  'rock shox': 'RockShox', rockshox: 'RockShox', ultegra: 'Ultegra', deore: 'Deore', xt: 'XT', slx: 'SLX', gx: 'GX',
+  maxxis: 'Maxxis', fox: 'Fox', mkt: 'marketing', suspa: 'suspensão', pdv: 'ponto de venda', exelente: 'excelente',
+  tubless: 'tubeless', videos: 'vídeos', retratil: 'retrátil', 'silver r': 'Silver R', odômetro: 'odômetro', 'e-wild': 'E-Wild', 'g-one': 'G-One', 'racing ray': 'Racing Ray', 'racing ralph': 'Racing Ralph',
+  'power cup': 'Power Cup', 'force xc2': 'Force XC2'
+};
+
+function senseTitulo(palavra) {
+  if (SENSE_SIGLAS[palavra]) return palavra;
+  if (/\d/.test(palavra) && !/-/.test(palavra)) return palavra; // 27.5, 12V
+  return palavra.split('-').map(function(p){ return SENSE_SIGLAS[p] ? p : p.charAt(0) + p.slice(1).toLowerCase(); }).join('-');
+}
+
+function senseCorDe(token) {
+  var partes = token.split('/');
+  if (!partes.every(function(p){ return SENSE_CORES[p]; })) return null;
+  return partes.map(function(p){ return SENSE_CORES[p]; }).join('/');
+}
+
+// "BIC SENE REACT PRO V2 2025 AZL/CZA TAM L" → { marca:'Sense', modelo:'React Pro V2', ano:'2025', cor:'Azul/Cinza' }
+function senseLimparModelo(txt) {
+  var s = ' ' + String(txt || '').toUpperCase().replace(/\s+/g, ' ').trim() + ' ';
+  var ano = (s.match(/\b(20\d\d)\b/) || [])[1] || '';
+  s = s.replace(/\b20\d\d\b/g, ' ')
+       .replace(/\bTAM\b.*$/, ' ')
+       .replace(/\(?\s*\d{2,3}(,\d)?\s*CM\s*\)?/g, ' ')
+       .replace(/^\s*(BICICLETA|BIC|BIKE)\b/, ' ')
+       .replace(/\b(USADA|SEMINOVA|NOVA)\b/g, ' ');
+  // Univox, Racevox e Enduravox são modelos da Swift, mesmo quando a planilha não escreve a marca
+  var marca = (/\bSWIFT\b/.test(s) || /\b(UNI|RACE|ENDURA)VOX\b/.test(s)) ? 'Swift' : 'Sense';
+  s = s.replace(/\bSWIFT\b/g, ' ').replace(/\bSENS?E\b/g, ' ');
+  var tokens = s.replace(/[()]/g, ' ').split(' ').filter(Boolean);
+  var modelo = [], cores = [];
+  tokens.forEach(function(t){
+    var c = senseCorDe(t);
+      if (c) cores.push(c);
+    else modelo.push(senseTitulo(t));
+  });
+  return { marca: marca, modelo: modelo.join(' '), ano: ano, cor: cores.join(' ') };
+}
+
+// Reescreve a coluna OBS (em maiúsculas, com a 1ª linha repetindo o modelo) em frases normais
+function senseLimparObs(txt, modeloOriginal) {
+  var palavrasModelo = String(modeloOriginal || '').toUpperCase().split(/[\s/()]+/).filter(function(p){ return p.length >= 3 && !/^(BIC|BICICLETA|BIKE|TAM|USADA|NOVA)$/.test(p); });
+  var linhas = String(txt || '').split(/\n/).map(function(l){ return l.trim().replace(/^[-•·*]\s*/, '').replace(/[;.]+$/, '').trim(); }).filter(Boolean);
+  var frases = [];
+  linhas.forEach(function(l){
+    var up = l.toUpperCase();
+    // 1ª linha que só repete o nome da bike ("BIKE USADA SENSE ACTIV 2023 CREME/PRETO TAMANHO M")
+    if (up.indexOf(',') < 0 && up.indexOf('AVARIA') < 0) {
+      var iguais = palavrasModelo.filter(function(p){ return up.indexOf(p) >= 0; }).length;
+      var comecaBike = /^(BIKE|BICICLETA|BIC)\b/.test(up), temTam = /\bTAM(ANHO)?\b/.test(up);
+      if ((comecaBike && (iguais >= 2 || temTam)) || (temTam && iguais >= 2)) return;
+    }
+    var f = l.toLowerCase();
+    Object.keys(SENSE_PALAVRAS).forEach(function(k){
+      f = f.replace(new RegExp('(^|[^a-zà-ú0-9])' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^a-zà-ú0-9])', 'g'), function(m, a){ return a + SENSE_PALAVRAS[k]; });
+    });
+    f = f.replace(/\s{2,}/g, ' ').replace(/([.!?]\s+)([a-zà-ú])/g, function(m, a, b){ return a + b.toUpperCase(); });
+    frases.push(f.charAt(0).toUpperCase() + f.slice(1) + '.');
+  });
+  return frases.join(' ');
+}
+
+function senseNorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, ''); }
+
+// Chave do catálogo de fichas: marca|modelo|ano
+function senseChave(b) {
+  return [b.marca, b.modelo, b.ano].map(function(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }).join('|');
+}
+
+// Lê a planilha (objeto do SheetJS) e devolve { linhas, avisos }
+function senseLerPlanilha(wb, XLSX) {
+  var ws = wb.Sheets[wb.SheetNames[0]];
+  var faixa = XLSX.utils.decode_range(ws['!ref']);
+  var cel = function(r, c){ return ws[XLSX.utils.encode_cell({ r: r, c: c })]; };
+  var txt = function(r, c){ var x = cel(r, c); return x ? String(x.w != null ? x.w : x.v).trim() : ''; };
+  // Acha a linha do cabeçalho e as colunas pelo nome (a ordem pode mudar)
+  var cab = -1, col = {};
+  for (var r = faixa.s.r; r <= Math.min(faixa.e.r, faixa.s.r + 10) && cab < 0; r++) {
+    for (var c = faixa.s.c; c <= faixa.e.c; c++) {
+      var h = senseNorm(txt(r, c));
+      if (h.indexOf('modelo') === 0) cab = r;
+    }
+  }
+  if (cab < 0) throw new Error('Não encontrei a coluna MODELO na planilha.');
+  for (var c2 = faixa.s.c; c2 <= faixa.e.c; c2++) {
+    var n = senseNorm(txt(cab, c2));
+    if (!n) continue;
+    if (n.indexOf('cod') === 0 && col.cod == null) col.cod = c2;
+    else if (n.indexOf('modelo') === 0) col.modelo = c2;
+    else if (n.indexOf('tam') === 0) col.tam = c2;
+    else if (n.indexOf('condic') === 0) col.cond = c2;
+    else if (n.indexOf('obs') === 0) col.obs = c2;
+    else if (n.indexOf('preco') >= 0 || n.indexOf('valor') >= 0) col.preco = c2;
+    else if (n.indexOf('link') >= 0 || n.indexOf('foto') >= 0) col.link = c2;
+  }
+  ['cod', 'modelo', 'preco'].forEach(function(k){ if (col[k] == null) throw new Error('Não encontrei a coluna ' + { cod: 'COD', modelo: 'MODELO', preco: 'PREÇO' }[k] + ' na planilha.'); });
+
+  var linhas = [], avisos = [], vistos = {};
+  for (var r2 = cab + 1; r2 <= faixa.e.r; r2++) {
+    var cod = txt(r2, col.cod), modeloTxt = txt(r2, col.modelo);
+    if (!cod && !modeloTxt) continue;
+    var ref = 'Linha ' + (r2 + 1) + (cod ? ' (cód. ' + cod + ')' : '');
+    if (!cod) { avisos.push(ref + ': sem código, ignorada.'); continue; }
+    if (vistos[cod]) { avisos.push(ref + ': código repetido (já está na linha ' + vistos[cod] + '), ignorada.'); continue; }
+    vistos[cod] = r2 + 1;
+    var pc = col.preco != null ? cel(r2, col.preco) : null;
+    var preco = pc ? (typeof pc.v === 'number' ? pc.v : Number(String(pc.v).replace(/[R$\s.]/g, '').replace(',', '.'))) : 0;
+    var lc = col.link != null ? cel(r2, col.link) : null;
+    var link = lc ? ((lc.l && lc.l.Target) || (/^https?:\/\//.test(String(lc.v)) ? String(lc.v) : '')) : '';
+    var m = senseLimparModelo(modeloTxt);
+    var obsOrig = col.obs != null ? (cel(r2, col.obs) ? String(cel(r2, col.obs).v) : '') : '';
+    var cond = senseNorm(txt(r2, col.cond)) === 'nova' ? 'NOVA' : 'USADA';
+    var item = {
+      linha: r2 + 1, codigo_externo: cod, modelo_original: modeloTxt,
+      marca: m.marca, modelo: m.modelo, ano: m.ano, cor: m.cor,
+      tamanho: (col.tam != null ? txt(r2, col.tam) : '').replace(/\s+/g, ' ').trim(),
+      condicao_origem: cond,
+      observacoes: senseLimparObs(obsOrig, modeloTxt) || (cond === 'NOVA' ? 'Bike nova, sem uso.' : ''),
+      preco: isFinite(preco) ? preco : 0,
+      fotos_link: link,
+      alertas: []
+    };
+    if (!item.preco) item.alertas.push('sem preço');
+    if (!link) item.alertas.push('sem link de fotos');
+    if (/\bX CICLOS\b/i.test(obsOrig)) item.alertas.push('OBS com "X ciclos" (dado faltando)');
+    if (!item.tamanho) item.alertas.push('sem tamanho');
+    linhas.push(item);
+  }
+  return { linhas: linhas, avisos: avisos };
+}
+
+// ===== IMPORTAR PLANILHA DA SENSE: tela de prévia e gravação =====
+var capImport = null; // prévia da importação aberta (null = fechada)
+var _xlsxCarregando = null;
+function capCarregarXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (_xlsxCarregando) return _xlsxCarregando;
+  _xlsxCarregando = new Promise(function(ok, falha){
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = function(){ ok(window.XLSX); };
+    s.onerror = function(){ _xlsxCarregando = null; falha(new Error('não consegui carregar o leitor de planilhas')); };
+    document.head.appendChild(s);
+  });
+  return _xlsxCarregando;
+}
+
+async function capCatalogo() {
+  var lista = await sbFetch('/rest/v1/catalogo_modelos?select=*');
+  var m = {}; (Array.isArray(lista) ? lista : []).forEach(function(c){ m[c.chave] = c; });
+  return m;
+}
+
+async function capImportarArquivo(input) {
+  var f = input.files && input.files[0];
+  input.value = '';
+  if (!f) return;
+  capAvisoLoja('📥 Lendo a planilha...');
+  try {
+    var XLSX = await capCarregarXLSX();
+    var wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    var r = senseLerPlanilha(wb, XLSX);
+    // Compara com o estado atual do banco (não com o que estava aberto na tela)
+    var fresco = await sbFetch('/rest/v1/submissoes?order=criado_em.desc&select=*');
+    if (Array.isArray(fresco)) { capData = fresco; window.capData = capData; }
+    var catalogo = {};
+    try { catalogo = await capCatalogo(); }
+    catch (e) { r.avisos.push('Catálogo de modelos indisponível (o SQL da Sense já foi rodado no Supabase?): ' + e.message); }
+    var existentes = {};
+    capData.forEach(function(b){ if (b.origem === 'sense' && b.codigo_externo) existentes[String(b.codigo_externo)] = b; });
+    var noArquivo = {}, novos = [], precoMudou = [], iguais = 0;
+    r.linhas.forEach(function(l){
+      noArquivo[l.codigo_externo] = 1;
+      l.ficha = catalogo[senseChave(l)] || null;
+      var ex = existentes[l.codigo_externo];
+      if (!ex) { l.marcar = true; novos.push(l); }
+      else if (l.preco && Number(capPrecoSite(ex)) !== Number(l.preco)) precoMudou.push({ linha: l, bike: ex, marcar: true });
+      else iguais++;
+    });
+    var sairam = Object.keys(existentes)
+      .filter(function(c){ var s = existentes[c].status; return !noArquivo[c] && s !== 'vendido' && s !== 'reprovado'; })
+      .map(function(c){ return { bike: existentes[c], marcar: false }; });
+    capImport = { arquivo: f.name, novos: novos, precoMudou: precoMudou, sairam: sairam, iguais: iguais, avisos: r.avisos };
+    capAvisoLoja('');
+    capDetalhe = null; capEditando = false;
+    drawCap(); window.scrollTo(0, 0);
+  } catch (e) {
+    capAvisoLoja('');
+    alert('Não foi possível ler a planilha: ' + e.message);
+  }
+}
+
+function capImportMarcar(grupo, i, valor) {
+  if (!capImport) return;
+  if (grupo === 'novos') capImport.novos[i].marcar = valor;
+  else capImport[grupo][i].marcar = valor;
+}
+function capImportTodos(grupo, valor) {
+  if (!capImport) return;
+  capImport[grupo].forEach(function(x){ x.marcar = valor; });
+  drawCap();
+}
+function capImportFechar() { capImport = null; drawCap(); }
+
+function drawCapImport(root) {
+  var im = capImport, e = capEsc;
+  var h = '<div style="margin-bottom:1.25rem"><button class="btn btn-sm" onclick="capImportFechar()">← Cancelar importação</button></div>';
+  h += '<div style="font-size:22px;font-weight:600">Importar planilha da Sense</div>';
+  h += '<div style="font-size:13px;color:var(--text3);margin:4px 0 1.5rem;font-family:DM Mono,monospace">' + e(im.arquivo) + ' · ' +
+    im.novos.length + ' nova(s) · ' + im.precoMudou.length + ' com preço novo · ' + im.sairam.length + ' fora da planilha · ' + im.iguais + ' sem mudança</div>';
+
+  if (im.avisos.length) {
+    h += '<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:var(--radius);padding:.75rem 1.25rem;margin-bottom:1.25rem;font-size:13px;color:var(--amber)">' +
+      im.avisos.map(function(a){ return '⚠️ ' + e(a); }).join('<br>') + '</div>';
+  }
+
+  var linhaBike = function(l){
+    var nome = [l.marca, l.modelo, l.ano].filter(Boolean).join(' ');
+    var info = [l.cor, l.tamanho ? 'tam. ' + l.tamanho : '', l.condicao_origem].filter(Boolean).join(' · ');
+    var marcas = [];
+    marcas.push(l.fotos_link ? '📷 pasta de fotos' : '<span style="color:var(--amber)">📷 sem fotos</span>');
+    marcas.push(l.ficha ? '<span style="color:var(--green)">📚 ficha do catálogo</span>' : '<span style="color:var(--text3)">📚 sem ficha</span>');
+    l.alertas.forEach(function(a){ if (a !== 'sem link de fotos') marcas.push('<span style="color:var(--amber)">⚠️ ' + e(a) + '</span>'); });
+    return '<div style="font-weight:500">' + e(nome) + ' <span style="color:var(--text3);font-family:DM Mono,monospace;font-size:11px">cód. ' + e(l.codigo_externo) + '</span></div>' +
+      '<div style="font-size:12px;color:var(--text2);margin-top:2px">' + e(info) + '</div>' +
+      '<div style="font-size:12px;color:var(--text3);margin-top:3px">' + e(l.observacoes) + '</div>' +
+      '<div style="font-size:11px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">' + marcas.join('') + '</div>';
+  };
+  var secao = function(titulo, grupo, itens, corpo, dica){
+    if (!itens.length) return '';
+    var s = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">';
+    s += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.75rem">' +
+      '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:DM Mono,monospace">' + titulo + ' (' + itens.length + ')</div>' +
+      '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="capImportTodos(\x27' + grupo + '\x27,true)">Marcar todas</button><button class="btn btn-sm" onclick="capImportTodos(\x27' + grupo + '\x27,false)">Desmarcar</button></div></div>';
+    if (dica) s += '<div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">' + dica + '</div>';
+    itens.forEach(function(x, i){
+      s += '<label style="display:flex;gap:12px;align-items:flex-start;padding:.75rem 0;border-top:1px solid var(--border);cursor:pointer">' +
+        '<input type="checkbox" style="margin-top:4px" ' + (x.marcar ? 'checked ' : '') + 'onchange="capImportMarcar(\x27' + grupo + '\x27,' + i + ',this.checked)">' +
+        '<div style="flex:1;min-width:0">' + corpo(x) + '</div></label>';
+    });
+    return s + '</div>';
+  };
+
+  h += secao('Bikes novas para importar', 'novos', im.novos, function(l){
+    return '<div style="display:flex;justify-content:space-between;gap:12px"><div>' + linhaBike(l) + '</div><div style="font-weight:600;color:var(--green);white-space:nowrap">' + (l.preco ? capFmtR(l.preco) : '—') + '</div></div>';
+  }, 'Entram na Captação como "Novo". Depois é só buscar as fotos, revisar e aprovar.');
+  h += secao('Preço mudou na planilha', 'precoMudou', im.precoMudou, function(x){
+    return '<div style="font-weight:500">' + e([x.bike.marca, x.bike.modelo, x.bike.ano].filter(Boolean).join(' ')) + ' <span style="color:var(--text3);font-family:DM Mono,monospace;font-size:11px">cód. ' + e(x.linha.codigo_externo) + '</span></div>' +
+      '<div style="font-size:13px;margin-top:2px">' + capFmtR(capPrecoSite(x.bike)) + ' → <b style="color:var(--green)">' + capFmtR(x.linha.preco) + '</b>' +
+      (x.bike.loja_produto_id && x.bike.status === 'aprovado' ? ' <span style="color:var(--teal);font-size:12px">· atualiza também na loja</span>' : '') + '</div>';
+  });
+  h += secao('Não estão mais na planilha', 'sairam', im.sairam, function(x){
+    return '<div style="font-weight:500">' + e([x.bike.marca, x.bike.modelo, x.bike.ano].filter(Boolean).join(' ')) + ' <span style="color:var(--text3);font-family:DM Mono,monospace;font-size:11px">cód. ' + e(x.bike.codigo_externo) + '</span></div>' +
+      '<div style="font-size:12px;color:var(--text2);margin-top:2px">Status: ' + e(CAP_LABELS[x.bike.status] || x.bike.status) + (x.bike.loja_produto_id ? ' · está na loja' : '') + '</div>';
+  }, 'Provavelmente vendidas pela Sense. As marcadas viram "Vendida" e saem do ar na loja.');
+
+  if (!im.novos.length && !im.precoMudou.length && !im.sairam.length) {
+    h += '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">Nada novo nesta planilha: tudo já está no painel.</div></div>';
+  } else {
+    h += '<div id="cap-imp-msg" style="font-size:13px;margin-bottom:.75rem"></div>';
+    h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem"><button class="btn btn-primary" id="cap-imp-btn" onclick="capImportConfirmar()">📥 Aplicar as marcadas</button><button class="btn" onclick="capImportFechar()">Cancelar</button></div>';
+  }
+  root.innerHTML = h;
+}
+
+async function capImportConfirmar() {
+  var im = capImport; if (!im) return;
+  var novos = im.novos.filter(function(x){ return x.marcar; });
+  var precos = im.precoMudou.filter(function(x){ return x.marcar; });
+  var sairam = im.sairam.filter(function(x){ return x.marcar; });
+  if (!novos.length && !precos.length && !sairam.length) { alert('Nada marcado.'); return; }
+  if (!confirm('Aplicar: ' + novos.length + ' bike(s) nova(s), ' + precos.length + ' mudança(s) de preço, ' + sairam.length + ' marcada(s) como vendida?')) return;
+  var btn = document.getElementById('cap-imp-btn'), msg = document.getElementById('cap-imp-msg');
+  var mostrar = function(t, cor){ if (msg) { msg.style.color = cor || 'var(--text2)'; msg.textContent = t; } };
+  if (btn) btn.disabled = true;
+  var erros = [];
+  try {
+    // 1. Bikes novas (em grupos de 20)
+    var agora = new Date().toISOString();
+    var payloads = novos.map(function(l){
+      var p = {
+        nome: 'Sense', whatsapp: '', origem: 'sense', codigo_externo: l.codigo_externo,
+        marca: l.marca, modelo: l.modelo, ano: l.ano || null, tamanho: l.tamanho || null, cor: l.cor || null,
+        condicao_origem: l.condicao_origem, observacoes: l.observacoes || null,
+        preco_pedido: l.preco || null, preco_venda: l.preco || null,
+        fotos_link: l.fotos_link || null, fotos: [], status: 'novo', criado_em: agora
+      };
+      // Todas as linhas com as mesmas colunas (exigência da gravação em lote)
+      ['tipo', 'suspensao', 'shock', 'freios', 'relacao', 'rodas', 'outros_componentes'].forEach(function(k){ p[k] = (l.ficha && l.ficha[k]) || null; });
+      return p;
+    });
+    for (var i = 0; i < payloads.length; i += 20) {
+      mostrar('Gravando bikes novas ' + (i + 1) + '–' + Math.min(i + 20, payloads.length) + ' de ' + payloads.length + '...');
+      await sbFetch('/rest/v1/submissoes', { method: 'POST', body: JSON.stringify(payloads.slice(i, i + 20)) });
+    }
+    // 2. Preços
+    var atualizarLoja = [];
+    for (var j = 0; j < precos.length; j++) {
+      mostrar('Atualizando preços ' + (j + 1) + ' de ' + precos.length + '...');
+      try {
+        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(precos[j].bike.id), { method: 'PATCH', body: JSON.stringify({ preco_venda: precos[j].linha.preco, preco_pedido: precos[j].linha.preco, atualizado_em: new Date().toISOString() }) });
+        if (precos[j].bike.loja_produto_id && precos[j].bike.status === 'aprovado') atualizarLoja.push(precos[j].bike.id);
+      } catch (e) { erros.push('Preço do cód. ' + precos[j].linha.codigo_externo + ': ' + e.message); }
+    }
+    // 3. Fora da planilha → vendida
+    var desativar = [];
+    for (var k = 0; k < sairam.length; k++) {
+      mostrar('Marcando como vendida ' + (k + 1) + ' de ' + sairam.length + '...');
+      try {
+        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(sairam[k].bike.id), { method: 'PATCH', body: JSON.stringify({ status: 'vendido', atualizado_em: new Date().toISOString() }) });
+        if (sairam[k].bike.loja_produto_id) desativar.push(sairam[k].bike.id);
+      } catch (e) { erros.push('Cód. ' + sairam[k].bike.codigo_externo + ': ' + e.message); }
+    }
+    // 4. Loja Integrada
+    for (var a = 0; a < atualizarLoja.length; a++) {
+      mostrar('Atualizando preço na loja ' + (a + 1) + ' de ' + atualizarLoja.length + '...');
+      try { await capChamarLoja('publicar', atualizarLoja[a]); } catch (e) { erros.push('Loja (preço): ' + e.message); }
+    }
+    for (var d = 0; d < desativar.length; d++) {
+      mostrar('Tirando da loja ' + (d + 1) + ' de ' + desativar.length + '...');
+      try { await capChamarLoja('desativar', desativar[d]); } catch (e) { erros.push('Loja (desativar): ' + e.message); }
+    }
+  } catch (e) {
+    mostrar('❌ Erro: ' + e.message, 'var(--red)');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  capImport = null;
+  await loadCapData();
+  var resumo = '✅ Importação concluída.\n\n' + novos.length + ' bike(s) nova(s), ' + precos.length + ' preço(s) atualizado(s), ' + sairam.length + ' marcada(s) como vendida.';
+  if (erros.length) resumo += '\n\n⚠️ Problemas:\n• ' + erros.join('\n• ');
+  alert(resumo);
+  var semFotos = capData.filter(function(b){ return b.origem === 'sense' && b.fotos_link && !capFotos(b).length && b.status !== 'vendido' && b.status !== 'reprovado'; });
+  if (semFotos.length && confirm('Buscar agora as fotos do Google Drive de ' + semFotos.length + ' bike(s) sem foto?\n(Leva alguns segundos por bike. Pode deixar a aba aberta.)')) {
+    await capBuscarFotosLote(semFotos.map(function(b){ return b.id; }));
+  }
+}
+
+// ===== FOTOS DO GOOGLE DRIVE (bikes da Sense) =====
+var capFotosOcupado = false;
+async function capBuscarFotosDrive(id, progresso) {
+  var urls = [], pulados = [], falhas = [], inicio = 0, total = 0;
+  do {
+    var tok = await sbToken();
+    if (!tok) throw new Error('Sessão expirada');
+    var res = await fetch('/.netlify/functions/drive-fotos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+      body: JSON.stringify({ id: id, inicio: inicio })
+    });
+    var j = {}; try { j = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(j.erro || ('HTTP ' + res.status));
+    urls = urls.concat(j.urls || []); pulados = pulados.concat(j.pulados || []); falhas = falhas.concat(j.falhas || []);
+    total = j.total || 0;
+    inicio = j.proximo;
+    if (progresso) progresso(urls.length, total);
+  } while (inicio !== null && inicio !== undefined);
+  if (urls.length) await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify({ fotos: urls, atualizado_em: new Date().toISOString() }) });
+  return { n: urls.length, total: total, pulados: pulados, falhas: falhas };
+}
+
+async function capBuscarFotosUma(id) {
+  if (capFotosOcupado) return;
+  var b = capBike(id); if (!b) return;
+  if (capFotos(b).length && !confirm('Este anúncio já tem ' + capFotos(b).length + ' foto(s). Substituir pelas fotos da pasta do Drive?')) return;
+  capFotosOcupado = true;
+  capAvisoLoja('📷 Buscando fotos no Google Drive...');
+  try {
+    var r = await capBuscarFotosDrive(id, function(n, t){ capAvisoLoja('📷 Copiando fotos do Drive: ' + n + ' de ' + t + '...'); });
+    capAvisoLoja('');
+    var msg = r.n ? '✅ ' + r.n + ' foto(s) copiada(s) do Drive. A primeira virou a capa; reordene em ✏️ Editar anúncio, se precisar.' : '⚠️ Nenhuma foto encontrada na pasta.';
+    if (r.pulados.length) msg += '\n\nIgnoradas (formato que a loja não aceita ou muito grandes):\n• ' + r.pulados.join('\n• ');
+    if (r.falhas.length) msg += '\n\nFalharam:\n• ' + r.falhas.join('\n• ');
+    alert(msg);
+  } catch (e) {
+    capAvisoLoja('');
+    alert('❌ Não foi possível buscar as fotos: ' + e.message);
+  }
+  capFotosOcupado = false;
+  await capRecarregarCap(id);
+}
+
+async function capBuscarFotosLote(ids) {
+  if (capFotosOcupado || !ids.length) return;
+  capFotosOcupado = true;
+  var ok = 0, problemas = [];
+  for (var i = 0; i < ids.length; i++) {
+    var b = capBike(ids[i]);
+    var nome = b ? [b.marca, b.modelo].join(' ') + ' (cód. ' + b.codigo_externo + ')' : ids[i];
+    try {
+      var r = await capBuscarFotosDrive(ids[i], function(n, t){ capAvisoLoja('📷 Bike ' + (i + 1) + ' de ' + ids.length + ' · foto ' + n + ' de ' + t); });
+      if (r.n) ok++; else problemas.push(nome + ': pasta sem fotos');
+      if (r.falhas.length) problemas.push(nome + ': ' + r.falhas.length + ' foto(s) falharam');
+    } catch (e) { problemas.push(nome + ': ' + e.message); }
+  }
+  capAvisoLoja('');
+  capFotosOcupado = false;
+  await loadCapData();
+  alert('📷 Fotos copiadas para ' + ok + ' de ' + ids.length + ' bike(s).' + (problemas.length ? '\n\n⚠️ Problemas:\n• ' + problemas.join('\n• ') : ''));
+}
+function capBuscarFotosPendentes() {
+  var ids = capData.filter(function(b){ return b.origem === 'sense' && b.fotos_link && !capFotos(b).length && b.status !== 'vendido' && b.status !== 'reprovado'; }).map(function(b){ return b.id; });
+  if (!ids.length) { alert('Nenhuma bike da Sense está sem fotos.'); return; }
+  if (!confirm('Buscar as fotos do Google Drive de ' + ids.length + ' bike(s) sem foto?')) return;
+  capBuscarFotosLote(ids);
+}
+
+// ===== CATÁLOGO DE FICHAS POR MODELO =====
+var CAP_CAMPOS_FICHA = ['tipo', 'suspensao', 'shock', 'freios', 'relacao', 'rodas', 'outros_componentes'];
+function capChaveEdicao() {
+  return senseChave({ marca: capLerCampo('marca'), modelo: capLerCampo('modelo'), ano: capLerCampo('ano') });
+}
+async function capAplicarCatalogo() {
+  var msg = document.getElementById('cap-cat-msg');
+  try {
+    var lista = await sbFetch('/rest/v1/catalogo_modelos?select=*&chave=eq.' + encodeURIComponent(capChaveEdicao()));
+    var c = Array.isArray(lista) && lista[0];
+    if (!c) { if (msg) { msg.style.color = 'var(--amber)'; msg.textContent = 'Ainda não há ficha deste modelo no catálogo (' + capChaveEdicao().replace(/\|/g, ' · ') + ').'; } return; }
+    CAP_CAMPOS_FICHA.forEach(function(k){ var el = document.getElementById('cap-ed-' + k); if (el) el.value = c[k] || ''; });
+    if (msg) { msg.style.color = 'var(--green)'; msg.textContent = '✅ Ficha do catálogo aplicada. Ajuste o que for específico desta bike e salve.'; }
+  } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Erro: ' + e.message; } }
+}
+async function capSalvarCatalogo(id) {
+  var msg = document.getElementById('cap-cat-msg');
+  var chave = capChaveEdicao();
+  var reg = { chave: chave, marca: capLerCampo('marca'), modelo: capLerCampo('modelo'), ano: capLerCampo('ano') || null, atualizado_em: new Date().toISOString() };
+  CAP_CAMPOS_FICHA.forEach(function(k){ reg[k] = capLerCampo(k) || null; });
+  if (!reg.suspensao && !reg.relacao && !reg.freios && !reg.outros_componentes) { alert('Preencha a ficha (suspensão, freios, transmissão...) antes de salvar no catálogo.'); return; }
+  try {
+    await sbFetch('/rest/v1/catalogo_modelos?on_conflict=chave', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(reg) });
+    // Outras bikes do mesmo modelo que ainda estão sem ficha
+    var outras = capData.filter(function(b){
+      return !capSameId(b.id, id) && b.origem === 'sense' && senseChave(b) === chave && b.status !== 'vendido' &&
+        !CAP_CAMPOS_FICHA.slice(1).some(function(k){ return b[k] && String(b[k]).trim(); });
+    });
+    var aplicadas = 0;
+    if (outras.length && confirm('Ficha salva no catálogo. Aplicar também nas outras ' + outras.length + ' bike(s) deste modelo que estão sem ficha?')) {
+      var campos = {}; CAP_CAMPOS_FICHA.forEach(function(k){ campos[k] = reg[k]; });
+      for (var i = 0; i < outras.length; i++) {
+        await sbFetch('/rest/v1/submissoes?id=eq.' + encodeURIComponent(outras[i].id), { method: 'PATCH', body: JSON.stringify(Object.assign({ atualizado_em: new Date().toISOString() }, campos)) });
+        aplicadas++;
+      }
+    }
+    if (msg) { msg.style.color = 'var(--green)'; msg.textContent = '✅ Ficha salva no catálogo' + (aplicadas ? ' e aplicada em mais ' + aplicadas + ' bike(s)' : '') + '. Agora salve as alterações desta bike.'; }
+  } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Não foi possível salvar no catálogo: ' + e.message; } }
+}
+
 
 function drawCap() {
   var root = document.getElementById('captacao-root');
   if (!root) return;
+  if (capImport) { drawCapImport(root); return; }
   if (capDetalhe) {
     var b = capData.find(function(x){return capSameId(x.id, capDetalhe);});
     if (b) { root.innerHTML = drawCapDetalhe(b); return; }
@@ -5424,8 +5886,12 @@ function drawCapLista(root) {
   // Header
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:12px">';
   h += '<div><div style="font-size:20px;font-weight:600">Captação remota</div>';
-  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">Bikes enviadas pelo formulário online</div></div>';
-  h += '<button class="btn btn-primary btn-sm" onclick="loadCapData()">↻ Atualizar</button></div>';
+  h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">Bikes enviadas pelo formulário online e pela planilha da Sense</div></div>';
+  var semFotosSense = capData.filter(function(b){ return b.origem === 'sense' && b.fotos_link && !capFotos(b).length && b.status !== 'vendido' && b.status !== 'reprovado'; }).length;
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  if (semFotosSense) h += '<button class="btn btn-sm btn-amber" onclick="capBuscarFotosPendentes()">📷 Buscar fotos do Drive (' + semFotosSense + ')</button>';
+  h += '<label class="btn btn-sm btn-teal" style="position:relative;overflow:hidden;cursor:pointer">📥 Importar planilha Sense<input type="file" accept=".xlsx,.xls,.csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="capImportarArquivo(this)"></label>';
+  h += '<button class="btn btn-primary btn-sm" onclick="loadCapData()">↻ Atualizar</button></div></div>';
   h += '<div style="display:flex;gap:8px;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0">';
   var tabLista = capSubTab==='lista' ? 'border-bottom:2px solid var(--green);color:var(--text)' : 'border-bottom:2px solid transparent;color:var(--text3)';
   var tabAnalise = capSubTab==='analise' ? 'border-bottom:2px solid var(--green);color:var(--text)' : 'border-bottom:2px solid transparent;color:var(--text3)';
@@ -5486,7 +5952,8 @@ function drawCapLista(root) {
       h += '<div class="bike-card" style="cursor:pointer;border-left:3px solid '+cor+'" onclick="capDetalhe=\x27'+b.id+'\x27;drawCap()">';
       h += '<div class="bike-top"><div>';
       h += '<div class="bike-name">'+(capEsc(b.marca)||'')+' '+(capEsc(b.modelo)||'')+' '+(capEsc(b.ano)||'')+'</div>';
-      h += '<div class="bike-sub-info">'+(capEsc(b.tipo)||'')+' · '+(capEsc(b.tamanho)||'')+' · '+(capEsc(b.cidade)||'')+'-'+(capEsc(b.estado)||'')+'</div>';
+      if (b.origem === 'sense') h += '<div class="bike-sub-info">Sense · cód. '+capEsc(b.codigo_externo)+' · '+[capEsc(b.cor), capEsc(b.tamanho), capEsc(b.condicao_origem)].filter(Boolean).join(' · ')+(capFotos(b).length ? '' : ' · 📷 sem fotos')+'</div>';
+      else h += '<div class="bike-sub-info">'+(capEsc(b.tipo)||'')+' · '+(capEsc(b.tamanho)||'')+' · '+(capEsc(b.cidade)||'')+'-'+(capEsc(b.estado)||'')+'</div>';
       h += '</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">';
       h += '<span class="badge" style="background:'+cor+'20;color:'+cor+'">'+(CAP_LABELS[b.status]||b.status)+'</span>';
       if (b.loja_produto_id && b.status==='aprovado') h += '<span class="badge" style="background:var(--bg3);color:var(--teal)">🛒 Na loja</span>';
@@ -5551,10 +6018,10 @@ async function capSalvar(id, campos) {
 }
 
 // ---------- Título do anúncio (mesmo padrão da loja) ----------
-// "MARCA MODELO - TAMANHO X - ANO - UF". A função publicar-loja usa a mesma regra.
+// "MARCA MODELO COR - TAMANHO X - ANO - UF". A função publicar-loja usa a mesma regra.
 function capTituloLoja(b) {
   var up = function(v){ return String(v || '').trim().toUpperCase(); };
-  var partes = [(up(b.marca) + ' ' + up(b.modelo)).trim()];
+  var partes = [[up(b.marca), up(b.modelo), up(b.cor)].filter(Boolean).join(' ')];
   if (b.tamanho) partes.push('TAMANHO ' + up(b.tamanho));
   if (b.ano) partes.push(String(b.ano).trim());
   if (b.estado) partes.push(up(b.estado));
@@ -5633,8 +6100,10 @@ function capLinhasFicha(b) {
 function capGerarDescricao(b) {
   var e = capEsc;
   var titulo = capTituloLoja(b);
-  var tipoLabel = b.tipo ? String(b.tipo).toUpperCase() : 'MTB';
-  var local = [String(b.cidade || '').trim(), String(b.estado || '').trim().toUpperCase()].filter(Boolean).join(' - ');
+  var sense = b.origem === 'sense';
+  var tipoLabel = b.tipo ? String(b.tipo).toUpperCase() : (sense ? '' : 'MTB');
+  var condLabel = sense ? (b.condicao_origem === 'NOVA' ? 'Nova' : 'Seminova') + ' · Sense' : 'Seminova';
+  var local = sense ? '' : [String(b.cidade || '').trim(), String(b.estado || '').trim().toUpperCase()].filter(Boolean).join(' - ');
 
   var linhas = capLinhasFicha(b);
   var selo = '<span style="display:inline-block;background:#c8ff00;color:#202d18;font-size:9px;font-weight:700;letter-spacing:1px;padding:2px 6px;border-radius:2px;margin-left:8px;vertical-align:middle;">UPGRADE</span>';
@@ -5646,15 +6115,32 @@ function capGerarDescricao(b) {
   var nomeBike = [b.marca, b.modelo, b.ano].filter(Boolean).join(' ').trim();
   var destaques = linhas.filter(function(l){ return /^(suspens|transmiss)/i.test(l.rotulo); }).map(function(l){ return l.valor.split(/[,;(]/)[0].trim(); });
   var ups = linhas.filter(function(l){ return l.upgrade; }).map(function(l){ return l.rotulo.toLowerCase(); });
-  var abertura = nomeBike + (b.tamanho ? ', tamanho ' + String(b.tamanho).trim() : '') + (destaques.length ? ', com ' + destaques.join(' e ') : '') + '.' +
+  var abertura = nomeBike + (b.cor ? ', cor ' + String(b.cor).trim().toLowerCase() : '') + (b.tamanho ? ', tamanho ' + String(b.tamanho).trim() : '') + (destaques.length ? ', com ' + destaques.join(' e ') : '') + '.' +
     (ups.length ? ' Recebeu upgrade de ' + (ups.length > 1 ? ups.slice(0, -1).join(', ') + ' e ' + ups[ups.length - 1] : ups[0]) + '.' : '');
 
-  var condTxt = b.observacoes ? e(b.observacoes) : 'Bike seminova em bom estado geral, conforme informado pelo vendedor. Estado confirmado no laudo técnico antes da entrega.';
+  var condTxt = b.observacoes ? e(b.observacoes) : (sense ? 'Bike em ótimo estado, conforme avaliação da Sense.' : 'Bike seminova em bom estado geral, conforme informado pelo vendedor. Estado confirmado no laudo técnico antes da entrega.');
+
+  // Bloco de garantia: Sense (garantia de fábrica, 12x, frete grátis) ou laudo Nuflow
+  var blocoGarantia = sense ?
+'  <div style="background:#f8f8f8;border:2px solid #111111;margin:2px 0;padding:12px 20px;">\n' +
+'    <p style="font-size:13px;color:#111111;font-weight:600;margin:0 0 2px 0;">📦 Enviada direto da Sense</p>\n' +
+'    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Frete grátis para todo o Brasil. A bike não fica disponível para visitação, mas enviamos fotos e vídeos adicionais pelo WhatsApp sempre que você precisar.</p>\n' +
+'  </div>\n' +
+'  <div style="background:#f0f5ee;border:2px solid #111111;margin:2px 0;padding:14px 20px;">\n' +
+'    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 4px 0;">✅ Garantia de fábrica Sense</p>\n' +
+'    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Bike avaliada pela equipe técnica da Sense e vendida com garantia de fábrica no nome do comprador. Pagamento em até 12x sem juros e frete grátis para todo o Brasil.</p>\n' +
+'  </div>\n'
+  :
+'  <div style="background:#f0f5ee;border:2px solid #111111;margin:2px 0;padding:14px 20px;">\n' +
+'    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 4px 0;">✅ Laudo técnico antes da entrega</p>\n' +
+'    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Antes de seguir para você, esta bike passa por um laudo técnico completo na Nuflow: quadro, suspensões, freios, transmissão e rodas. Qualquer ajuste necessário é feito nesse momento, pouco antes do envio. Assim ela chega pronta para pedalar, sem o desgaste de ficar parada depois da revisão.</p>\n' +
+'  </div>\n';
+  var rodapeCta = sense ? 'Garantia Sense + 12x sem juros + frete grátis' : 'Laudo técnico antes da entrega + curadoria Nuflow + entrega nacional';
 
   return '<!--NUFLOW BIKES - DESCRICAO DE PRODUTO PREMIUM-->\n' +
 '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;color:#1a1a1a;background:#ffffff;padding:0;">\n' +
 '  <p style="font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#111111;margin:0 0 8px 0;padding:20px 20px 0 20px;">' + e(titulo) + '</p>\n' +
-'  <p style="margin:0 0 16px 0;padding:0 20px;"><span style="display:inline-block;background:#202d18;color:#c8ff00;font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:3px 10px;border-radius:2px;">' + e(tipoLabel) + ' · Seminova</span></p>\n' +
+'  <p style="margin:0 0 16px 0;padding:0 20px;"><span style="display:inline-block;background:#202d18;color:#c8ff00;font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:3px 10px;border-radius:2px;">' + e([tipoLabel, condLabel].filter(Boolean).join(' · ')) + '</span></p>\n' +
 '  <p style="font-size:14px;color:#444444;line-height:1.7;margin:0 0 20px 0;padding:0 20px;">' + e(abertura) + '</p>\n' +
 '  <div style="background:#f8f8f8;border:2px solid #111111;margin:0 0 2px 0;padding:12px 20px;">\n' +
 '    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 12px 0;">Componentes em Destaque</p>\n' +
@@ -5669,14 +6155,11 @@ function capGerarDescricao(b) {
 '    <p style="font-size:13px;color:#111111;font-weight:600;margin:0 0 2px 0;">📍 Bike localizada em ' + e(local) + '</p>\n' +
 '    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Entrega para todo o Brasil, com toda a negociação intermediada pela Nuflow.</p>\n' +
 '  </div>\n' : '') +
-'  <div style="background:#f0f5ee;border:2px solid #111111;margin:2px 0;padding:14px 20px;">\n' +
-'    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#202d18;margin:0 0 4px 0;">✅ Laudo técnico antes da entrega</p>\n' +
-'    <p style="font-size:12px;color:#444444;line-height:1.6;margin:0;">Antes de seguir para você, esta bike passa por um laudo técnico completo na Nuflow: quadro, suspensões, freios, transmissão e rodas. Qualquer ajuste necessário é feito nesse momento, pouco antes do envio. Assim ela chega pronta para pedalar, sem o desgaste de ficar parada depois da revisão.</p>\n' +
-'  </div>\n' +
+blocoGarantia +
 '  <div style="background:#f8f8f8;border-top:2px solid #202d18;margin:2px 0 0 0;padding:16px 20px;">\n' +
 '    <div style="background:#202d18;padding:10px 16px;border-radius:3px;display:inline-block;">\n' +
 '      <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#ffffff;margin:0 0 2px 0;">COMPRA SOMENTE PELO WHATSAPP</p>\n' +
-'      <p style="font-size:11px;color:rgba(255,255,255,0.65);margin:0;">Laudo técnico antes da entrega + curadoria Nuflow + entrega nacional</p>\n' +
+'      <p style="font-size:11px;color:rgba(255,255,255,0.65);margin:0;">' + rodapeCta + '</p>\n' +
 '    </div>\n' +
 '  </div>\n' +
 '</div>';
@@ -5731,9 +6214,18 @@ function drawCapDetalhe(b) {
 
   // Vendedor + valores
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:1.25rem">';
+  if (b.origem === 'sense') {
+    h += capCard('Origem: planilha da Sense', '<div style="display:flex;flex-direction:column;gap:8px">' +
+      capInfo('Código Sense', capEsc(b.codigo_externo) || '—') +
+      capInfo('Condição na planilha', capEsc(b.condicao_origem) || '—') +
+      capInfo('Cor', capEsc(b.cor) || '—') +
+      capInfo('Pasta de fotos', b.fotos_link ? '<a href="' + capEsc(b.fotos_link) + '" target="_blank" rel="noopener" style="color:var(--teal)">Abrir no Google Drive ↗</a>' : 'sem link') +
+      '</div>').replace('margin-bottom:1.25rem', 'margin-bottom:0');
+  } else {
   h += capCard('Vendedor', '<div style="display:flex;flex-direction:column;gap:8px">' +
     capInfo('Nome', capEsc(b.nome) || '—') + capInfo('WhatsApp', capEsc(b.whatsapp) || '—') +
     capInfo('Cidade', (capEsc(b.cidade) || '—') + ' - ' + (capEsc(b.estado) || '—')) + '</div>').replace('margin-bottom:1.25rem', 'margin-bottom:0');
+  }
   var com = precoSite ? capCalcCom(precoSite) : 0;
   h += capCard('Bike e valores', '<div style="display:flex;flex-direction:column;gap:8px">' +
     capInfo('Tipo / Tam.', (capEsc(b.tipo) || '—') + ' · ' + (capEsc(b.tamanho) || '—')) +
@@ -5751,7 +6243,9 @@ function drawCapDetalhe(b) {
         '<img src="' + capEsc(u) + '" loading="lazy" alt="Foto ' + (i+1) + '" style="width:100%;height:100%;object-fit:cover;display:block">' +
         (i === 0 ? '<span class="badge" style="position:absolute;top:6px;left:6px;background:#000a;color:var(--green)">Capa</span>' : '') + '</a>';
     }).join('') + '</div>' : '<div style="font-size:13px;color:var(--text3)">Nenhuma foto neste envio.</div>';
-  h += capCard('Fotos (' + fotos.length + ')', corpoFotos, fotos.length ? '<button class="btn btn-sm btn-teal" onclick="capBaixarFotos(\x27' + bid + '\x27,this)">⬇ Baixar todas</button>' : '');
+  var botoesFotos = (b.fotos_link ? '<button class="btn btn-sm btn-amber" onclick="capBuscarFotosUma(\x27' + bid + '\x27)">📷 ' + (fotos.length ? 'Buscar de novo no Drive' : 'Buscar fotos do Drive') + '</button>' : '') +
+    (fotos.length ? '<button class="btn btn-sm btn-teal" onclick="capBaixarFotos(\x27' + bid + '\x27,this)">⬇ Baixar todas</button>' : '');
+  h += capCard('Fotos (' + fotos.length + ')', corpoFotos, botoesFotos ? '<div style="display:flex;gap:6px;flex-wrap:wrap">' + botoesFotos + '</div>' : '');
 
   // Componentes
   var campos = [['Suspensão', b.suspensao], ['Amortecedor', b.shock], ['Freios', b.freios], ['Transmissão', b.relacao], ['Rodas', b.rodas], ['Extras', b.outros_componentes], ['Condição / observações', b.observacoes]].filter(function(x){ return !!x[1]; });
@@ -5948,7 +6442,7 @@ async function capSalvarRevisao(id, avisar) {
 var CAP_CAMPOS_EDIT = [
   // [coluna, rótulo, tipo]
   ['marca', 'Marca', 'text'], ['modelo', 'Modelo', 'text'], ['ano', 'Ano', 'text'],
-  ['tamanho', 'Tamanho', 'text'], ['tipo', 'Tipo / modalidade', 'text'],
+  ['tamanho', 'Tamanho', 'text'], ['cor', 'Cor', 'text'], ['tipo', 'Tipo / modalidade', 'text'],
   ['suspensao', 'Suspensão', 'text'], ['shock', 'Amortecedor', 'text'], ['freios', 'Freios', 'text'],
   ['relacao', 'Transmissão', 'text'], ['rodas', 'Rodas', 'text'],
   ['outros_componentes', 'Outros itens da ficha · um por linha, "Item: modelo" (ex.: Canote: RockShox Reverb 150mm). Escreva (upgrade) para destacar', 'textarea'],
@@ -5987,6 +6481,15 @@ function drawCapEditar(b) {
         (c[2] === 'textarea' ? '<textarea id="cap-ed-' + c[0] + '" rows="' + (c[0] === 'outros_componentes' ? 6 : 3) + '">' + v + '</textarea>' : '<input id="cap-ed-' + c[0] + '" value="' + v + '">') + '</div>';
     }).join('') + '</div>',
     '<button class="btn btn-sm btn-teal" id="cap-ia-btn" onclick="capPadronizarIA()">✨ Padronizar com IA</button>');
+
+  // Catálogo de fichas (bikes da Sense): uma ficha por modelo, reaproveitada pelas outras unidades
+  if (b.origem === 'sense') {
+    h += capCard('📚 Catálogo de fichas da Sense',
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:.75rem">A planilha da Sense não traz componentes. Preencha a ficha deste modelo uma vez (dica: cole a ficha oficial do site da Sense em "Outros itens" e use ✨ Padronizar com IA) e salve no catálogo: as próximas bikes do mesmo modelo e ano já chegam com ela.</div>' +
+      '<div id="cap-cat-msg" style="font-size:13px;margin-bottom:.75rem"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" onclick="capAplicarCatalogo()">📚 Usar ficha do catálogo</button>' +
+      '<button class="btn btn-sm btn-teal" onclick="capSalvarCatalogo(\x27' + bid + '\x27)">💾 Salvar esta ficha no catálogo</button></div>');
+  }
 
   // Fotos
   h += capCard('Fotos (' + capEditFotos.length + ') · a primeira é a capa', '<div id="cap-ed-fotos">' + drawCapEditFotos() + '</div>',
