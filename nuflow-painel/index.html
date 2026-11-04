@@ -2816,6 +2816,7 @@ window.registrarVenda=async function(id){
       await salvarCliente('comprador', {
         cpf: compradorCPF, nome: comprador, email: compradorEmail,
         tel: compradorTel, cidade: compradorCidade, estado: compradorEstado,
+        cep: compradorCEP, end: compradorEnd, rg: compradorRG,
         valorVenda, dataVenda, marca: bike.marca, modelo: bike.modelo, bikeId: id
       });
     }catch(ce){console.error('Erro ao salvar cliente comprador:',ce);}
@@ -3337,6 +3338,7 @@ window.cadastrarEGerarConsignacao=async function(){
         await salvarCliente('vendedor', {
           cpf: vendedor.cpf, nome: vendedor.nome, email: vendedor.email,
           tel: vendedor.tel, cidade: vendedor.cidade, estado: vendedor.estado,
+          cep: vendedor.cep, rua: vendedor.rua, numero: vendedor.numero, comp: vendedor.comp, bairro: vendedor.bairro,
           valor: Number(valor), dataEntrada, marca, modelo, bikeId: docRef.id
         });
       }catch(ce){console.error('Erro ao salvar cliente vendedor:',ce);}
@@ -3532,6 +3534,14 @@ window.preencherClienteCadastroById=function(id,fields){
   const s=(fid,val)=>{const el=document.getElementById(fid);if(el&&val)el.value=val;};
   s(fields.nomeFieldId,c.nome);s(fields.cpfFieldId,c.cpf);s(fields.emailFieldId,c.email);
   s(fields.telFieldId,c.tel);s(fields.cidadeFieldId,c.cidade);s(fields.estadoFieldId,c.estado);
+  // Endereço completo
+  const endLinha=c.end||[[c.rua,c.numero].filter(Boolean).join(', '),c.comp,c.bairro].filter(Boolean).join(' - ');
+  if(fields.nomeFieldId==='v-nome'){
+    s('v-cep',c.cep);s('v-rua',c.rua||(!c.numero&&c.end)||'');s('v-numero',c.numero);s('v-comp',c.comp);s('v-bairro',c.bairro);
+  }else if(fields.nomeFieldId&&fields.nomeFieldId.startsWith('sv-comp-')){
+    const bid=fields.nomeFieldId.replace('sv-comp-','');
+    s('sv-cep-'+bid,c.cep);s('sv-end-'+bid,endLinha);s('sv-rg-'+bid,c.rg);
+  }
   // Fechar sugestões — ambas as caixas possíveis
   ['v-cpf-suggestion','v-nome-suggestions',fields.suggestionBoxId].forEach(boxId=>{
     if(!boxId)return;
@@ -3582,6 +3592,7 @@ window.cadastrarBike=async function(){
         await salvarCliente('vendedor',{
           cpf:vendedor.cpf,nome:vendedor.nome,email:vendedor.email,
           tel:vendedor.tel,cidade:vendedor.cidade,estado:vendedor.estado,
+          cep:vendedor.cep,rua:vendedor.rua,numero:vendedor.numero,comp:vendedor.comp,bairro:vendedor.bairro,
           valor:window.parseBRL(valor)||0,dataEntrada,marca,modelo,bikeId:docRef.id
         });
       }catch(ce){console.error('Erro ao salvar cliente vendedor:',ce);}
@@ -5034,7 +5045,7 @@ async function carregarClientesEmMemoria() {
       const histSalvo = c.historico||[];
       const vistos = new Set(histSalvo.map(h => h.bikeId+'|'+h.tipo));
       const extras = histBikes.filter(h => !vistos.has(h.bikeId+'|'+h.tipo));
-      mapa[k] = {...c, historico:[...histSalvo, ...extras]};
+      mapa[k] = clienteCompletar({...c, historico:[...histSalvo, ...extras]}, mapa[k]);
     } else {
       mapa[k] = c;
     }
@@ -5043,6 +5054,14 @@ async function carregarClientesEmMemoria() {
   _clientesData = Object.values(mapa).sort((a,b)=>(b.atualizadoEm||b.criadoEm||'').localeCompare(a.atualizadoEm||a.criadoEm||''));
 }
 
+// Preenche só os campos que ainda estão vazios
+function clienteCompletar(alvo, fonte){
+  if(!alvo||!fonte)return alvo;
+  ['nome','cpf','email','tel','cidade','estado','rg','cep','rua','numero','comp','bairro','end'].forEach(k=>{
+    const v=fonte[k]; if(v&&!String(alvo[k]||'').trim()) alvo[k]=v;
+  });
+  return alvo;
+}
 function gerarClientesDesBikes(){
   // Constrói lista de clientes a partir das bikes já carregadas em memória
   const mapa = {}; // chave: cpf ou email
@@ -5060,10 +5079,12 @@ function gerarClientesDesBikes(){
         tel: b.compradorTel||'',
         cidade: b.compradorCidade||'',
         estado: b.compradorEstado||'',
+        rg: b.compradorRG||'', cep: b.compradorCEP||'', end: b.compradorEnd||'',
         historico: [],
         criadoEm: b.dataVenda||'',
         atualizadoEm: b.dataVenda||''
       };
+      clienteCompletar(mapa[chave], {nome:b.comprador,cpf:b.compradorCPF,email:b.compradorEmail,tel:b.compradorTel,cidade:b.compradorCidade,estado:b.compradorEstado,rg:b.compradorRG,cep:b.compradorCEP,end:b.compradorEnd});
       mapa[chave].historico.push({
         tipo:'comprador',
         data: b.dataVenda||'',
@@ -5086,10 +5107,12 @@ function gerarClientesDesBikes(){
         tel: v.tel||'',
         cidade: v.cidade||'',
         estado: v.estado||'',
+        cep: v.cep||'', rua: v.rua||'', numero: v.numero||'', comp: v.comp||'', bairro: v.bairro||'',
         historico: [],
         criadoEm: b.dataEntrada||'',
         atualizadoEm: b.dataEntrada||''
       };
+      clienteCompletar(mapa[chave], v);
       mapa[chave].historico.push({
         tipo:'vendedor',
         data: b.dataEntrada||'',
@@ -7614,6 +7637,9 @@ window.capCopyDesc = function(btn) {
 // Auto-save clientes when registrarVenda or registrarBike is called
 // Clientes collection in Firebase: {cpf, nome, email, tel, cidade, estado, historico:[]}
 
+// Endereço e documento também ficam no cadastro do cliente, para o painel preencher tudo depois
+const CLIENTE_CAMPOS_EXTRA = ['rg', 'cep', 'rua', 'numero', 'comp', 'bairro', 'end'];
+function clienteExtras(d) { const o = {}; CLIENTE_CAMPOS_EXTRA.forEach(k => { if (d && d[k]) o[k] = d[k]; }); return o; }
 async function salvarCliente(tipo, dados) {
   // tipo: 'comprador' | 'vendedor'
   // dados: {cpf, nome, email, tel, cidade, estado, ...bikeInfo}
@@ -7671,9 +7697,12 @@ async function salvarCliente(tipo, dados) {
       if (dados.cpf) update.cpf = dados.cpf;
       if (dados.email) update.email = dados.email;
       if (dados.tel) update.tel = dados.tel;
+      CLIENTE_CAMPOS_EXTRA.forEach(k => { if (dados[k]) update[k] = dados[k]; });
       if (dados.cidade) update.cidade = dados.cidade;
       if (dados.estado) update.estado = dados.estado;
       await _updateDoc(_doc(db, 'clientes', existingId), update);
+      const mem = (window._clientesData || []).find(x => x._id === existingId);
+      if (mem) Object.keys(update).forEach(k => { if (k !== 'historico') mem[k] = update[k]; });
       console.log('[salvarCliente] Cliente atualizado:', dados.nome||dados.cpf||dados.email||dados.tel);
     } else {
       // Create new client
@@ -7684,6 +7713,7 @@ async function salvarCliente(tipo, dados) {
         tel: dados.tel || '',
         cidade: dados.cidade || '',
         estado: dados.estado || '',
+        ...clienteExtras(dados),
         historico: [entrada],
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString()
@@ -7692,7 +7722,7 @@ async function salvarCliente(tipo, dados) {
       // Atualizar lista em memória imediatamente para autocomplete funcionar sem precisar recarregar
       _clientesData.unshift({
         _id: novoRef.id, cpf: dados.cpf||'', nome: dados.nome||'', email: dados.email||'',
-        tel: dados.tel||'', cidade: dados.cidade||'', estado: dados.estado||'',
+        tel: dados.tel||'', cidade: dados.cidade||'', estado: dados.estado||'', ...clienteExtras(dados),
         historico: [entrada], criadoEm: new Date().toISOString(), atualizadoEm: new Date().toISOString()
       });
     }
