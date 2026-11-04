@@ -604,6 +604,9 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
       <div class="fg"><label>Tipo</label>
         <select id="n-tipo"><option value="">Selecione</option><option>Trail</option><option>Enduro</option><option>Downhill</option><option>E-MTB</option><option>XC</option><option>Speed</option><option>Gravel</option><option>Urban</option></select>
       </div>
+      <div class="fg"><label>O que está sendo vendido</label>
+        <select id="n-composicao"><option value="completa">Bike completa</option><option value="quadro">Somente quadro</option><option value="powertrain">Powertrain completo (motor, bateria e display)</option></select>
+      </div>
       <div class="fg"><label>Aquisição</label>
         <select id="n-aquisicao" onchange="toggleProprioBlock()"><option value="consignado">Consignado</option><option value="proprio">Compra própria</option></select>
       </div>
@@ -689,6 +692,18 @@ let bikes=[];
 let charts={};
 
 const COM_PISO=700,COM_TETO=4500,COM_PERC=0.08;
+
+// ===== O QUE ESTÁ SENDO VENDIDO: bike completa, só o quadro ou powertrain =====
+const COMPOSICOES={completa:'Bike completa',quadro:'Somente quadro',powertrain:'Powertrain completo'};
+function compKey(b){let k=b&&b.composicao;if(k==='quadro_powertrain')k='quadro';return COMPOSICOES[k]?k:'completa';}
+function compLabel(b){return COMPOSICOES[compKey(b)];}
+function compBadge(b,estilo){
+  const k=compKey(b);if(k==='completa')return '';
+  const cor=k==='quadro'?'var(--amber)':'var(--purple)';const fundo=k==='quadro'?'var(--amber-dim)':'var(--purple-dim)';
+  return `<span class="badge" style="background:${fundo};color:${cor};margin-left:6px;vertical-align:middle;${estilo||''}">${COMPOSICOES[k]}</span>`;
+}
+function compOptions(sel){return Object.entries(COMPOSICOES).map(([k,v])=>`<option value="${k}" ${(sel||'completa')===k?'selected':''}>${v}</option>`).join('');}
+window.COMPOSICOES=COMPOSICOES;window.compKey=compKey;window.compLabel=compLabel;window.compBadge=compBadge;
 
 // Converte valor digitado em pt-BR ("22.500" ou "22500" ou "22,500") para número
 function parseBRL(str){
@@ -982,7 +997,7 @@ function renderEstoque(){
         <div>
           <div style="font-size:15px;font-weight:600;color:var(--text)">
             ${b.marca} ${b.modelo}
-            <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>
+            <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>${compBadge(b)}
             ${b.ano?`<span style="font-size:11px;font-weight:500;background:var(--bg4);padding:1px 7px;border-radius:10px;color:var(--text3);font-family:Inter,sans-serif;margin-left:4px">${b.ano}</span>`:''}
           </div>
           <div style="font-size:12px;color:var(--text3);margin-top:2px;font-family:Inter,sans-serif">
@@ -1129,6 +1144,7 @@ function renderEstoque(){
             ${['Trail','E-MTB','Enduro','XC','DH','Gravel','Outro'].map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}
           </select></div>
           <div class="fg"><label>Tamanho</label><input type="text" id="eb-tamanho-${b._docId}" value="${b.tamanho||''}"></div>
+          <div class="fg"><label>O que está sendo vendido</label><select id="eb-composicao-${b._docId}">${compOptions(b.composicao)}</select></div>
           <div class="fg"><label>Nº Série</label><input type="text" id="eb-serie-${b._docId}" value="${b.serie||''}"></div>
           <div class="fg"><label>Valor (R$)</label><input type="text" id="eb-valor-${b._docId}" value="${b.valor||''}" oninput="calcComissaoEditBike('${b._docId}')"></div>
           <div class="fg"><label>Cor</label><input type="text" id="eb-cor-${b._docId}" value="${b.cor||''}"></div>
@@ -1267,6 +1283,7 @@ window.baixarBikeCheckPDF=async function(id){
   const campos=[
     ['Nº de série',bike.serie||'—'],
     ['Marca / Modelo',[bike.marca,bike.modelo,bike.versao].filter(Boolean).join(' ')||'—'],
+    ['Item',compLabel(bike)],
     ['Ano',bike.ano||'—'],
     ['Tipo',bike.tipo||'—'],
     ['Tamanho',bike.tamanho||'—'],
@@ -1527,7 +1544,7 @@ window.gerarContratoVenda=async function(id){
     dataVenda:bike.dataVenda||new Date().toISOString().split('T')[0],
     marca:bike.marca||'',modelo:bike.modelo||'',versao:bike.versao||'',
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
-    cor:bike.cor||'',ano:bike.ano||'',
+    cor:bike.cor||'',ano:bike.ano||'',composicao:compLabel(bike),
     nfNumero:bike.nfNumero||'',temNF:bike.temNF||false,
     vendedorNome:v.nome||'',vendedorCPF:v.cpf||'',
     obsContrato:bike.obsContrato||''
@@ -1634,7 +1651,7 @@ function renderVendidas(){
       <!-- Topo clicável para expandir -->
       <div class="bike-top" style="cursor:pointer" onclick="toggleDetalheVenda('${b._docId}')">
         <div>
-          <div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span></div>
+          <div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>${compBadge(b)}</div>
           <div class="bike-sub-info">${[b.tipo,b.tamanho,b.dataVenda?new Date(b.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):''].filter(Boolean).join(' · ')}</div>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
@@ -1740,6 +1757,7 @@ function renderVendidas(){
         <div class="panel-title">Editar informações da venda</div>
         <div class="sell-grid">
           <div class="fg"><label>Nome do comprador</label><input type="text" id="ev-comp-${b._docId}" value="${b.comprador||''}"></div>
+          <div class="fg"><label>O que foi vendido</label><select id="ev-composicao-${b._docId}">${compOptions(b.composicao)}</select></div>
           <div class="fg"><label>CPF comprador</label><input type="text" id="ev-cpf-${b._docId}" value="${b.compradorCPF||''}"></div>
           <div class="fg"><label>E-mail comprador</label><input type="email" id="ev-email-${b._docId}" value="${b.compradorEmail||''}"></div>
           <div class="fg"><label>Data da venda</label><input type="date" id="ev-data-${b._docId}" value="${b.dataVenda||''}"></div>
@@ -1778,7 +1796,7 @@ function renderBCPending(){
   el.innerHTML=ativos.map(b=>`
     <div class="bc-pending-card">
       <div>
-        <div class="bike-name">${b.marca} ${b.modelo} ${b.versao||''}</div>
+        <div class="bike-name">${b.marca} ${b.modelo} ${b.versao||''}${compBadge(b)}</div>
         <div class="bike-sub-info">${[b.tipo,b.tamanho].filter(Boolean).join(' · ')} · ${diasDesde(b.dataEntrada)}d em estoque</div>
         ${b.vendedor?.nome?`<div style="font-size:12px;color:var(--text3);margin-top:4px">Vendedor: ${b.vendedor.nome}</div>`:''}
       </div>
@@ -2242,7 +2260,7 @@ window.exportarBikeCheckPDF=async function(id){
   doc.setTextColor(20,20,20);doc.setFont('helvetica','bold');doc.setFontSize(14);
   doc.text(((bike.marca||'')+' '+(bike.modelo||'')+' '+(bike.versao||'')).trim(),ML,y);y+=6;
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(80,80,80);
-  const infos=[bike.tipo&&'Tipo: '+bike.tipo,bike.tamanho&&'Tam: '+bike.tamanho,bike.ano?'Ano: '+bike.ano:null,bike.serie?'Série: '+bike.serie:null].filter(Boolean).join('   ·   ');
+  const infos=[compKey(bike)!=='completa'?compLabel(bike):null,bike.tipo&&'Tipo: '+bike.tipo,bike.tamanho&&'Tam: '+bike.tamanho,bike.ano?'Ano: '+bike.ano:null,bike.serie?'Série: '+bike.serie:null].filter(Boolean).join('   ·   ');
   if(infos){doc.text(infos,ML,y);y+=5;}
   doc.setDrawColor(200,200,200);doc.line(ML,y,W-MR,y);y+=5;
 
@@ -2825,7 +2843,8 @@ window.salvarEdicaoVenda=async function(id){
     bike?.diasParaVender??null;
   setSyncStatus('saving');
   try{
-    await updateDoc(doc(db,'bikes',id),{dataVenda,valorVenda,comissaoRecebida,canalVenda,comprador,compradorCPF,compradorEmail,diasParaVender});
+    const composicao=g('ev-composicao-'+id)||'completa';
+    await updateDoc(doc(db,'bikes',id),{dataVenda,valorVenda,comissaoRecebida,canalVenda,comprador,compradorCPF,compradorEmail,diasParaVender,composicao});
     setSyncStatus('ok');
     const msg=document.getElementById('ev-msg-'+id);
     if(msg){msg.style.display='inline';setTimeout(()=>msg.style.display='none',2000);}
@@ -3061,6 +3080,7 @@ function gerarPDFContrato(tipo, dados){
     campo('Endereço:',dados.compradorEnd);
     campo('Cidade/Estado/CEP:',`${dados.compradorCidade}/${dados.compradorEstado} – ${dados.compradorCEP}`);
     secao('IDENTIFICAÇÃO DO PRODUTO');
+    campo('Item vendido:',dados.composicao||'Bike completa');
     campo('Marca / Modelo / Versão:',`${dados.marca} ${dados.modelo} ${dados.versao}`);
     campo('Tipo:',dados.tipo||'não informado');
     campo('Tamanho:',dados.tamanho||'não informado');
@@ -3208,7 +3228,7 @@ window.gerarContrato=async function(id){
     dataVenda:g('sv-data-'+id)||new Date().toISOString().split('T')[0],
     marca:bike.marca||'',modelo:bike.modelo||'',versao:bike.versao||'',
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
-    cor:bike.cor||'',ano:bike.ano||'',
+    cor:bike.cor||'',ano:bike.ano||'',composicao:compLabel(bike),
     nfNumero:bike.nfNumero||'',temNF:bike.temNF||false,
     vendedorNome:v.nome||'',vendedorCPF:v.cpf||'',
     obsContrato:g('sv-obs-contrato-'+id)||bike.obsContrato||''
@@ -3300,13 +3320,14 @@ window.cadastrarEGerarConsignacao=async function(){
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
   const serie=g('n-serie');
   const obsContratoConsig=g('n-obs-contrato');
-  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:Number(valor),dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString()};
+  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:Number(valor),dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString(),composicao:g('n-composicao')||'completa',ano:g('n-ano')};
   if(aquisicao==='proprio'){data.custo=Number(custo);data.precoEst=Number(precoEst);}
   setSyncStatus('saving');
   try{
     const docRef=await addDoc(bikesCol,data);
     ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie','v-nome','v-cpf','v-email','v-tel','v-cep','v-rua','v-numero','v-comp','v-bairro','v-cidade','v-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('n-tipo').value='';document.getElementById('n-aquisicao').value='consignado';
+    ['n-composicao','n-ano'].forEach(id=>{const el=document.getElementById(id);if(el)el.selectedIndex=0;});
     document.getElementById('n-data').value=new Date().toISOString().split('T')[0];
     document.getElementById('proprio-block')?.classList.remove('show');
     document.getElementById('com-preview').textContent='Preencha o valor';
@@ -3363,16 +3384,16 @@ window.salvarEditarBike=async function(id){
   const updates={
     marca:g('eb-marca-'),modelo:g('eb-modelo-'),versao:g('eb-versao-'),
     ano:g('eb-ano-'),tipo:g('eb-tipo-'),tamanho:g('eb-tamanho-'),
-    serie:g('eb-serie-'),cor:g('eb-cor-'),
+    serie:g('eb-serie-'),cor:g('eb-cor-'),composicao:g('eb-composicao-')||'completa',
     valor:novoValor,precoEst:novoValor,
     vendedor:{
       ...bike.vendedor,
-      nome:g('eb-vnome-'+id),cpf:g('eb-vcpf-'+id),
-      email:g('eb-vemail-'+id),tel:g('eb-vtel-'+id),
-      cep:g('eb-vcep-'+id),rua:g('eb-vrua-'+id),
-      numero:g('eb-vnumero-'+id),comp:g('eb-vcomp-'+id),
-      bairro:g('eb-vbairro-'+id),
-      cidade:g('eb-vcidade-'+id),estado:(g('eb-vestado-'+id)||'').toUpperCase()
+      nome:g('eb-vnome-'),cpf:g('eb-vcpf-'),
+      email:g('eb-vemail-'),tel:g('eb-vtel-'),
+      cep:g('eb-vcep-'),rua:g('eb-vrua-'),
+      numero:g('eb-vnumero-'),comp:g('eb-vcomp-'),
+      bairro:g('eb-vbairro-'),
+      cidade:g('eb-vcidade-'),estado:(g('eb-vestado-')||'').toUpperCase()
     }
   };
 
@@ -3550,7 +3571,7 @@ window.cadastrarBike=async function(){
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
   const serie=g('n-serie');
   const obsContratoConsig=g('n-obs-contrato');
-  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:window.parseBRL(valor)||0,dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString()};
+  const data={marca,modelo,versao,tamanho,tipo,aquisicao,valor:window.parseBRL(valor)||0,dataEntrada,serie,vendedor,obsContratoConsig,vendida:false,criadoEm:new Date().toISOString(),composicao:g('n-composicao')||'completa',ano:g('n-ano')};
   if(aquisicao==='proprio'){data.custo=Number(custo)||0;data.precoEst=Number(precoEst)||0;}
   setSyncStatus('saving');
   try{
@@ -3571,6 +3592,7 @@ window.cadastrarBike=async function(){
     ].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('n-tipo').value='';
     document.getElementById('n-aquisicao').value='consignado';
+    ['n-composicao','n-ano'].forEach(id=>{const el=document.getElementById(id);if(el)el.selectedIndex=0;});
     document.getElementById('n-data').value=new Date().toISOString().split('T')[0];
     document.getElementById('proprio-block')?.classList.remove('show');
     document.getElementById('com-preview').textContent='Preencha o valor';
@@ -3832,7 +3854,7 @@ function renderDRE(){
         ${d.vendas.slice().sort((a,b)=>String(a.dataVenda).localeCompare(String(b.dataVenda))).map(v=>`
           <div class="dre-item">
             <div>
-              <div class="dre-item-tit">${esc(v.marca||'')} ${esc(v.modelo||'')} <span style="color:var(--text3);font-weight:400">${esc(v.versao||'')}</span></div>
+              <div class="dre-item-tit">${esc(v.marca||'')} ${esc(v.modelo||'')} <span style="color:var(--text3);font-weight:400">${esc(v.versao||'')}</span>${compBadge(v)}</div>
               <div class="dre-item-sub">${v.dataVenda?new Date(v.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):'—'} · ${[v.tipo,v.tamanho].filter(Boolean).map(esc).join(' · ')} · ${esc(v.comprador||v.vendedor?.nome||'—')}</div>
             </div>
             <div style="text-align:right">
@@ -4413,7 +4435,7 @@ function renderAnalise(){
   if(metricsEl) metricsEl.innerHTML=`
     <div class="metric m-green"><div class="metric-label">Total vendidas</div><div class="metric-value">${vv.length}</div></div>
     <div class="metric m-blue"><div class="metric-label">Em estoque</div><div class="metric-value">${at.length}</div></div>
-    <div class="metric m-amber"><div class="metric-label">Ticket médio</div><div class="metric-value sm">${(()=>{const cv=vv.filter(b=>Number(b.valorVenda)>0);return cv.length?fmtRInt(Math.round(cv.reduce((s,b)=>s+Number(b.valorVenda),0)/cv.length)):'—';})()}</div><div class="metric-sub">${vv.filter(b=>Number(b.valorVenda)>0).length} vendas com valor</div></div>
+    <div class="metric m-amber"><div class="metric-label">Ticket médio</div><div class="metric-value sm">${(()=>{const cv=vv.filter(b=>Number(b.valorVenda)>0&&compKey(b)==='completa');return cv.length?fmtRInt(Math.round(cv.reduce((s,b)=>s+Number(b.valorVenda),0)/cv.length)):'—';})()}</div><div class="metric-sub">${vv.filter(b=>Number(b.valorVenda)>0&&compKey(b)==='completa').length} bikes completas${vv.some(b=>compKey(b)!=='completa')?' · quadros/powertrain fora da média':''}</div></div>
     <div class="metric m-purple"><div class="metric-label">Sem bike check</div><div class="metric-value" style="color:var(--amber)">${at.filter(b=>!b.bikeCheck).length}</div><div class="metric-sub">em estoque</div></div>
   `;
   destroyCharts();
@@ -4478,6 +4500,13 @@ function renderAnalise(){
     <div class="insight-card"><div class="insight-label">Tipo mais vendido</div><div class="insight-value">${mt?mt[0]:'—'}</div><div class="insight-sub">${mt?mt[1]+' vendas':''}</div></div>
     <div class="insight-card"><div class="insight-label">Marca top</div><div class="insight-value">${mm?mm[0]:'—'}</div><div class="insight-sub">${mm?mm[1]+' vendas':''}</div></div>
     <div class="insight-card"><div class="insight-label">Tempo médio</div><div class="insight-value">${diasMed||'—'}</div><div class="insight-sub">dias para vender</div></div>
+    ${(()=>{
+      // O que foi vendido: bike completa × só quadro × powertrain (o ticket de quadro distorce a média das bikes)
+      const g={};vv.forEach(b=>{const k=compKey(b);(g[k]=g[k]||{n:0,v:0,c:0}).n++;g[k].v+=Number(b.valorVenda||0);if(Number(b.valorVenda)>0)g[k].c++;});
+      const linhas=Object.keys(COMPOSICOES).filter(k=>g[k]).map(k=>`<li><span>${COMPOSICOES[k]} · ${g[k].n}</span><span>${g[k].c?fmtRInt(g[k].v/g[k].c)+' médio':'—'}</span></li>`).join('');
+      const parcial=Object.keys(g).some(k=>k!=='completa');
+      return `<div class="insight-card"><div class="insight-label">O que foi vendido</div><ul class="top-list">${linhas||'<li><span>—</span><span></span></li>'}</ul>${parcial?'':'<div class="insight-sub">só bikes completas até agora</div>'}</div>`;
+    })()}
   `;
   renderQualidadeDados(vv);
 }
@@ -4512,8 +4541,8 @@ function renderFipe(){
     const anoGrupo=b.ano||'';
     const versaoGrupo=b.versao||'';
     const versaoNorm=(versaoGrupo||'').trim().toLowerCase();
-    const k=`${marcaNorm}||${modeloNorm}||${versaoNorm}||${anoGrupo}`;
-    if(!grupos[k])grupos[k]={marca:marcaNorm,modelo:modeloNorm,tipo:b.tipo,ano:anoGrupo,versao:versaoGrupo,vendas:[]};
+    const k=`${marcaNorm}||${modeloNorm}||${versaoNorm}||${anoGrupo}||${compKey(b)}`;
+    if(!grupos[k])grupos[k]={marca:marcaNorm,modelo:modeloNorm,tipo:b.tipo,ano:anoGrupo,versao:versaoGrupo,comp:compKey(b),vendas:[]};
     grupos[k].vendas.push({
       id:b._docId,
       valor:Number(b.valorVenda),
@@ -4580,9 +4609,9 @@ function renderFipe(){
         </tr></thead>
         <tbody>
           ${rows.map(r=>`
-            <tr style="cursor:pointer" onclick="toggleFipeDetalhe('${r.marca}||${r.modelo}||${r.ano||''}')" title="Clique para ver detalhes">
+            <tr style="cursor:pointer" onclick="toggleFipeDetalhe('${r.marca}||${r.modelo}||${r.ano||''}||${r.comp||''}')" title="Clique para ver detalhes">
               <td style="color:var(--text2);font-size:12px">${r.marca}</td>
-              <td style="color:var(--text);font-weight:600">${r.modelo}</td>
+              <td style="color:var(--text);font-weight:600">${r.modelo}${compBadge({composicao:r.comp},'font-size:10.5px;padding:1px 7px')}</td>
               <td style="color:var(--blue);font-size:12px">${r.versao||'<span style="color:var(--text3)">—</span>'}</td>
               <td style="font-family:Inter,sans-serif;font-size:12px;color:var(--text3)">${r.ano||'—'}</td>
               <td style="color:var(--text3);font-size:12px">${r.tipo||'—'}</td>
@@ -4595,7 +4624,7 @@ function renderFipe(){
               <td style="color:var(--text3);font-family:Inter,sans-serif;font-size:12px">${r.n}</td>
               <td style="font-size:11px;color:var(--text3)">${r.ult?.data?new Date(r.ult.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</td>
             </tr>
-            <tr id="fipe-det-${r.marca}||${r.modelo}||${r.ano||''}" style="display:none">
+            <tr id="fipe-det-${r.marca}||${r.modelo}||${r.ano||''}||${r.comp||''}" style="display:none">
               <td colspan="${mostrarComissao?13:12}" style="padding:0">
                 <div style="background:var(--bg3);padding:1rem 1.25rem;border-bottom:2px solid var(--green)">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-family:Inter,sans-serif;margin-bottom:.75rem">Histórico — ${r.marca} ${r.modelo}${r.ano?' '+r.ano:''}</div>
@@ -7153,7 +7182,7 @@ function geralItens() {
   (window.estBikesBH ? window.estBikesBH() : []).forEach(function(b){
     var dias = b.dataEntrada ? Math.floor((new Date() - new Date(b.dataEntrada + 'T12:00:00')) / 86400000) : null;
     itens.push({ origem: 'bh', ref: b, marca: b.marca, modelo: b.modelo, versao: b.versao, ano: b.ano, tamanho: b.tamanho, tipo: b.tipo,
-      preco: Number(b.valor || 0), dias: dias, situacao: b.aquisicao === 'proprio' ? 'Compra própria' : 'Consignada', foto: '' });
+      preco: Number(b.valor || 0), dias: dias, situacao: (b.aquisicao === 'proprio' ? 'Compra própria' : 'Consignada') + (window.compKey && window.compKey(b) !== 'completa' ? ' · ' + window.compLabel(b) : ''), foto: '' });
   });
   (capData || []).forEach(function(b){
     if (b.status === 'vendido' || b.status === 'reprovado') return;
