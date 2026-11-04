@@ -266,7 +266,10 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
 .loading{text-align:center;padding:3rem;color:var(--text3);font-size:13px;}
 .pulse{animation:pulse 1.5s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
-@media(max-width:900px){.dre-resumo{grid-template-columns:1fr;}}
+.adm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+/* Equipe: esconde o que é só de administrador */
+body.nf-equipe .nf-so-admin{display:none!important;}
+@media(max-width:900px){.dre-resumo,.adm-grid{grid-template-columns:1fr;}}
 @media(max-width:700px){
   header{padding:0 1rem;height:56px;}.tabs-bar{padding:0 .5rem;top:56px;}.main{padding:1rem;}
   .grid2{grid-template-columns:1fr;}.gcol2{grid-column:1;}
@@ -279,6 +282,7 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
   .logo{white-space:nowrap;}.logo>span>span{display:none;}
   header>div:nth-child(2){margin:0 .6rem!important;max-width:none!important;}
   .sync-status{font-size:0;gap:0;}
+  #nf-usuario{display:none;}
   .section-title{font-size:20px;}
 }
 </style>
@@ -308,7 +312,7 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
       <span id="alertas-count" style="position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:9px;font-family:Inter,sans-serif;border-radius:10px;padding:1px 5px;min-width:16px;text-align:center"></span>
     </div>
     <div id="alertas-panel" style="display:none;position:absolute;top:60px;right:16px;width:340px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);z-index:200;box-shadow:0 8px 32px #0008;max-height:400px;overflow-y:auto"></div>
-    <span class="sync-status idle" id="sync-status">conectando...</span> <button class="btn btn-sm" style="margin-left:10px" onclick="nfLogout()" title="Sair do painel">Sair</button>
+    <span id="nf-usuario" style="font-size:12px;color:var(--text3)"></span> <span class="sync-status idle" id="sync-status">conectando...</span> <button class="btn btn-sm" style="margin-left:10px" onclick="nfLogout()" title="Sair do painel">Sair</button>
   </div>
 </header>
 
@@ -322,6 +326,7 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
   <button class="tab" onclick="switchTab('financeiro')" id="tab-btn-financeiro">Financeiro</button>
   <button class="tab" onclick="switchTab('nova')" id="tab-btn-nova">Cadastrar bike</button>
   <button class="tab" onclick="switchTab('clientes')" id="tab-btn-clientes">Clientes</button>
+  <button class="tab" onclick="switchTab('admin')" id="tab-btn-admin">Administração</button>
 </div>
 
 <div class="main">
@@ -579,6 +584,10 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
   <div id="fin-lista"></div>
 </div>
 
+<div id="sec-admin" class="section">
+  <div id="admin-root"></div>
+</div>
+
 <div id="sec-clientes" class="section">
   <div id="clientes-root"><div class="loading pulse">carregando...</div></div>
 </div>
@@ -670,7 +679,8 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, getDocs, addDoc as _addDocFS, updateDoc as _updateDocFS, deleteDoc as _deleteDocFS, doc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import * as FSMOD from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 // Storage importado sob demanda
 
@@ -690,6 +700,80 @@ let storage=null; // inicializado sob demanda
 const bikesCol=collection(db,'bikes');
 let bikes=[];
 let charts={};
+
+// ===== HISTÓRICO DE ALTERAÇÕES =====
+// Toda gravação no Firebase passa por aqui e fica registrada (quem, quando, antes e depois).
+function audMem(col,id){
+  const arr=col==='bikes'?bikes:col==='financeiro'?finLancamentos:col==='gastos'?gastos:col==='clientes'?(window._clientesData||[]):[];
+  return (arr||[]).find(x=>x&&(x._docId===id||x._id===id))||null;
+}
+function audLimpar(o){
+  if(o==null)return null;
+  try{
+    const txt=JSON.stringify(o,(k,v)=>{
+      if(k&&k.charAt(0)==='_')return undefined;
+      if(typeof v==='string'&&v.length>300)return v.startsWith('data:')?'[arquivo]':v.slice(0,300)+'…';
+      return v;
+    });
+    if(txt.length>20000)return {aviso:'conteúdo muito grande, resumido',campos:Object.keys(o).filter(k=>k.charAt(0)!=='_')};
+    return JSON.parse(txt);
+  }catch(e){return null;}
+}
+function audResumo(col,o){
+  if(!o)return '';
+  if(col==='bikes')return [o.marca,o.modelo,o.versao].filter(Boolean).join(' ');
+  if(col==='financeiro'||col==='gastos')return [o.desc,o.valor!=null&&o.valor!==''?fmtRInt(o.valor):''].filter(Boolean).join(' · ');
+  if(col==='clientes')return o.nome||o.email||o.cpf||'';
+  return '';
+}
+function audRegistrar(acao,col,id,antes,depois,mem){
+  try{
+    if(!window.sbAuditar)return;
+    window.sbAuditar({acao,base:'firebase',colecao:col,registro_id:String(id||''),
+      resumo:audResumo(col,mem||depois||antes)||audResumo(col,{...(mem||{}),...(depois||{})}),
+      antes:audLimpar(antes),depois:audLimpar(depois)});
+  }catch(e){}
+}
+async function addDoc(col,dados){
+  const r=await _addDocFS(col,dados);
+  audRegistrar('criou',col.id,r.id,null,dados);
+  return r;
+}
+async function updateDoc(ref,a,...resto){
+  const dados=typeof a==='string'?{[a]:resto[0]}:a;
+  const mem=audMem(ref.parent.id,ref.id);
+  const antes=mem?Object.fromEntries(Object.keys(dados||{}).map(k=>[k,mem[k]===undefined?null:mem[k]])):null;
+  const r=await _updateDocFS(ref,a,...resto);
+  audRegistrar('alterou',ref.parent.id,ref.id,antes,dados,mem);
+  return r;
+}
+async function deleteDoc(ref){
+  const mem=audMem(ref.parent.id,ref.id);
+  const r=await _deleteDocFS(ref);
+  audRegistrar('excluiu',ref.parent.id,ref.id,mem,null,mem);
+  return r;
+}
+// Os trechos que carregavam o Firestore sob demanda passam a usar as versões que registram histórico
+window.__fsAudit={...FSMOD,addDoc,updateDoc,deleteDoc};
+
+// ===== BACKUP =====
+// Junta tudo (Firebase + Supabase) num arquivo só.
+async function nfMontarBackup(){
+  const fb={};
+  for(const c of ['bikes','financeiro','gastos','clientes']){
+    try{const snap=await getDocs(collection(db,c));fb[c]=snap.docs.map(d=>({_id:d.id,...d.data()}));}
+    catch(e){fb[c]={erro:String(e&&e.message||e)};}
+  }
+  const sb={};
+  for(const t of ['submissoes','painel_config','painel_usuarios']){
+    try{sb[t]=await window.sbFetch('/rest/v1/'+t+'?select=*');}catch(e){sb[t]={erro:String(e&&e.message||e)};}
+  }
+  const contagem={};
+  Object.entries(fb).forEach(([k,v])=>contagem['firebase.'+k]=Array.isArray(v)?v.length:'erro');
+  Object.entries(sb).forEach(([k,v])=>contagem['supabase.'+k]=Array.isArray(v)?v.length:'erro');
+  return {sistema:'Nuflow Bikes · painel',versao:1,gerado_em:new Date().toISOString(),por:auth.currentUser?.email||'',contagem,firebase:fb,supabase:sb};
+}
+window.nfMontarBackup=nfMontarBackup;
 
 const COM_PISO=700,COM_TETO=4500,COM_PERC=0.08;
 
@@ -915,8 +999,10 @@ function updateCounts(){
 }
 
 function switchTab(tab){
+  // Equipe não acessa áreas de administrador
+  if(window.nfEhAdmin&&!window.nfEhAdmin()&&['dre','financeiro','analise','admin'].includes(tab))tab='geral';
   const grupoEstoque=['geral','estoque','captacao','sense'].includes(tab);
-  ['geral','estoque','vendidas','bikecheck','analise','fipe','dre','financeiro','nova','captacao','sense','clientes'].forEach(t=>{
+  ['geral','estoque','vendidas','bikecheck','analise','fipe','dre','financeiro','nova','captacao','sense','clientes','admin'].forEach(t=>{
     document.getElementById('sec-'+t).classList.toggle('active',t===tab);
     const btn=document.getElementById('tab-btn-'+t);
     if(btn)btn.classList.toggle('active',t===tab);
@@ -935,6 +1021,7 @@ function switchTab(tab){
   if(tab==='captacao')renderCaptacao();
   if(tab==='sense'&&window.renderSense)window.renderSense();
   if(tab==='clientes')renderClientes();
+  if(tab==='admin'&&window.nfRenderAdmin)window.nfRenderAdmin();
 }
 window.switchTab=switchTab;
 
@@ -2776,7 +2863,7 @@ window.registrarVenda=async function(id){
     });
     // Lançamento financeiro automático — divisão de comissão
     try{
-      const {addDoc:_addDoc}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const {addDoc:_addDoc}=window.__fsAudit;
       const imposto=comissaoRecebida*dreAliq(String(dataVenda||'').substring(0,7)||'9999');
       const liquido=comissaoRecebida-imposto;
       const parcCaixa=Math.round(liquido*0.22*100)/100;
@@ -2868,7 +2955,7 @@ window.estornarVenda=async function(id){
     // 2. Remover lançamentos financeiros automáticos desta venda
     const lancamentosVenda=finLancamentos.filter(f=>f.bikeId===id&&f.tipo==='receita_venda');
     if(lancamentosVenda.length>0){
-      const {deleteDoc:_del,doc:_doc}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const {deleteDoc:_del,doc:_doc}=window.__fsAudit;
       for(const f of lancamentosVenda){
         await _del(_doc(db,'financeiro',f._docId));
         console.log('Lançamento removido:',f.desc,f._docId);
@@ -2926,9 +3013,10 @@ function fmtDataContrato(dateStr){
 
 // ===== D4SIGN HELPERS (via Netlify proxy) =====
 async function d4signProxy(body){
+  const tok=window.sbToken?await window.sbToken():null;
   const r=await fetch('/.netlify/functions/d4sign',{
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),
     body:JSON.stringify(body)
   });
   return r.json();
@@ -5012,7 +5100,7 @@ async function carregarClientesEmMemoria() {
   let salvos = [];
   try {
     const {collection:_col, getDocs:_getDocs, orderBy:_orderBy, query:_query}
-      = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      = window.__fsAudit;
     const snap = await _getDocs(_query(_col(db,'clientes'), _orderBy('atualizadoEm','desc')));
     salvos = snap.docs.map(d => ({...d.data(), _id: d.id}));
   } catch(e) {
@@ -5154,8 +5242,8 @@ function drawClientes() {
   h += '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + _clientesData.length + ' cadastrados · ' + compradores + ' compradores · ' + vendedores + ' vendedores</div></div>';
   const nEmails = new Set(_clientesData.map(c => clienteEmailValido(c.email) ? c.email.trim().toLowerCase() : '').filter(Boolean)).size;
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
-  h += '<button class="btn btn-sm" onclick="clientesExportar(\'postmark\')" title="Um contato por e-mail válido, sem repetidos — pronto para importar">⬇ E-mails para newsletter (' + nEmails + ')</button>';
-  h += '<button class="btn btn-sm" onclick="clientesExportar(\'completo\')" title="Todos os clientes com todos os dados, para abrir no Excel">⬇ Planilha completa</button>';
+  h += '<button class="btn btn-sm nf-so-admin" onclick="clientesExportar(\'postmark\')" title="Um contato por e-mail válido, sem repetidos — pronto para importar">⬇ E-mails para newsletter (' + nEmails + ')</button>';
+  h += '<button class="btn btn-sm nf-so-admin" onclick="clientesExportar(\'completo\')" title="Todos os clientes com todos os dados, para abrir no Excel">⬇ Planilha completa</button>';
   h += '<button class="btn btn-primary btn-sm" onclick="loadClientes()">↻ Atualizar</button></div></div>';
   
   // Search bar
@@ -5288,6 +5376,7 @@ function clienteResumo(c){
   };
 }
 window.clientesExportar = async function(modo){
+  if (window.nfEhAdmin && !window.nfEhAdmin()) { alert("Exportação disponível só para administradores."); return; }
   if (!_clientesData.length) await carregarClientesEmMemoria();
   const csv = (linhas, sep) => linhas.map(l => l.map(v => { const t = String(v == null ? '' : v); return /["\n\r,;]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }).join(sep)).join('\r\n');
   const hoje = new Date().toISOString().slice(0, 10);
@@ -5452,7 +5541,9 @@ function nfEntrar(){
   document.getElementById('nf-login').style.display='none';
   if(_nfIniciado)return;
   _nfIniciado=true;
+  const papel=window.nfCarregarPapel?window.nfCarregarPapel():Promise.resolve();
   loadData();
+  papel.then(()=>setTimeout(()=>{if(window.nfBackupAutomatico)window.nfBackupAutomatico();},8000));
 }
 window.nfShowLogin=function(msg){
   document.getElementById('nf-login').style.display='flex';
@@ -5543,8 +5634,9 @@ window.sbSignOut = function() {
   if (s) fetch(SB_URL + '/auth/v1/logout', { method: 'POST', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + s.access_token } }).catch(function(){});
 };
 window.sbHasSession = async function() { return !!(await sbToken()); };
+window.sbToken = sbToken;
 
-async function sbFetch(path, opts) {
+async function sbFetchBase(path, opts) {
   opts = opts || {};
   var tok = await sbToken();
   if (!tok) {
@@ -5575,6 +5667,291 @@ async function sbFetch(path, opts) {
   if (res.status === 204 || opts.method === 'DELETE') return {};
   try { return await res.json(); } catch(e) { return {}; }
 }
+
+// Toda gravação no Supabase também entra no histórico de alterações
+async function sbFetch(path, opts) {
+  opts = opts || {};
+  var metodo = String(opts.method || 'GET').toUpperCase();
+  if (metodo === 'GET' || !/^\/rest\/v1\//.test(path) || /^\/rest\/v1\/auditoria/.test(path)) return sbFetchBase(path, opts);
+  var tabela = path.split('?')[0].split('/').pop();
+  var mId = path.match(/[?&]id=eq\.([^&]+)/);
+  var id = mId ? decodeURIComponent(mId[1]) : '';
+  var corpo = null; try { corpo = opts.body ? JSON.parse(opts.body) : null; } catch (e) {}
+  var mem = (tabela === 'submissoes' && id && Array.isArray(window.capData)) ? window.capData.find(function(b){ return String(b.id) === id; }) : null;
+  var antes = null;
+  if (mem) {
+    if (metodo === 'DELETE') antes = mem;
+    else if (corpo && !Array.isArray(corpo)) { antes = {}; Object.keys(corpo).forEach(function(k){ antes[k] = mem[k] === undefined ? null : mem[k]; }); }
+  }
+  var r = await sbFetchBase(path, opts);
+  var fonte = mem || (corpo && !Array.isArray(corpo) ? corpo : {}) || {};
+  var resumo = tabela === 'submissoes' ? [fonte.marca, fonte.modelo, fonte.ano].filter(Boolean).join(' ') : (tabela === 'painel_config' ? (corpo && corpo.chave) || '' : (tabela === 'painel_usuarios' ? (corpo && corpo.email) || id || '' : ''));
+  if (!id && corpo && corpo.id) id = String(corpo.id);
+  if (!id) { var mEmail = path.match(/[?&]email=eq\.([^&]+)/); if (mEmail) id = decodeURIComponent(mEmail[1]); }
+  window.sbAuditar({ acao: metodo === 'POST' ? 'criou' : metodo === 'DELETE' ? 'excluiu' : 'alterou', base: 'supabase', colecao: tabela, registro_id: id,
+    resumo: resumo, antes: nfAudLimpar(antes), depois: metodo === 'DELETE' ? null : nfAudLimpar(Array.isArray(corpo) ? { itens: corpo.length } : corpo) });
+  return r;
+}
+function nfAudLimpar(o) {
+  if (o == null) return null;
+  try {
+    var t = JSON.stringify(o, function(k, v){ if (typeof v === 'string' && v.length > 300) return v.slice(0, 300) + '…'; return v; });
+    if (t.length > 20000) return { aviso: 'conteúdo muito grande, resumido', campos: Object.keys(o) };
+    return JSON.parse(t);
+  } catch (e) { return null; }
+}
+var _audDesligado = false;
+window.sbAuditar = function(reg) {
+  if (_audDesligado) return;
+  sbFetchBase('/rest/v1/auditoria', { method: 'POST', body: JSON.stringify(reg) }).catch(function(e){
+    // Tabela ainda não criada (SQL 7 não rodado): para de tentar nesta sessão
+    if (/auditoria|does not exist|schema cache|404/i.test(String(e && e.message))) _audDesligado = true;
+  });
+};
+
+// ===== USUÁRIO LOGADO E PAPEL (admin / equipe) =====
+function nfEmailLogado() {
+  var s = _sbSession || sbLoadSession();
+  try { return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || ''; } catch (e) { return ''; }
+}
+window.nfEmailLogado = nfEmailLogado;
+window.nfPapel = 'admin';
+window.nfEhAdmin = function() { return window.nfPapel !== 'equipe'; };
+window.nfCarregarPapel = async function() {
+  var email = nfEmailLogado().toLowerCase();
+  window.nfPapel = 'admin';
+  try {
+    var r = await sbFetchBase('/rest/v1/painel_usuarios?select=email,papel,nome');
+    window.nfUsuarios = Array.isArray(r) ? r : [];
+    var eu = window.nfUsuarios.find(function(u){ return String(u.email || '').toLowerCase() === email; });
+    if (eu && eu.papel === 'equipe') window.nfPapel = 'equipe';
+  } catch (e) { window.nfUsuarios = []; }
+  nfAplicarPapel();
+  return window.nfPapel;
+};
+var NF_ABAS_ADMIN = ['dre', 'financeiro', 'analise', 'admin'];
+function nfAplicarPapel() {
+  var admin = window.nfEhAdmin();
+  NF_ABAS_ADMIN.forEach(function(t){ var b = document.getElementById('tab-btn-' + t); if (b) b.style.display = admin ? '' : 'none'; });
+  document.body.classList.toggle('nf-equipe', !admin);
+  var u = document.getElementById('nf-usuario');
+  if (u) u.textContent = nfEmailLogado() + (admin ? '' : ' · equipe');
+}
+window.nfAplicarPapel = nfAplicarPapel;
+
+// ===== BACKUPS (pasta privada "backups" no Supabase) =====
+async function nfBkpReq(caminho, opts) {
+  var tok = await sbToken();
+  if (!tok) throw new Error('Sessão expirada');
+  opts = opts || {};
+  var res = await fetch(SB_URL + '/storage/v1/' + caminho, { method: opts.method || 'GET',
+    headers: Object.assign({ apikey: SB_KEY, Authorization: 'Bearer ' + tok }, opts.headers || {}), body: opts.body });
+  if (!res.ok) { var t = ''; try { t = (await res.json()).message || ''; } catch (e) {} throw new Error(t || ('Erro ' + res.status + ' no armazenamento')); }
+  return res;
+}
+window.nfBackupListar = async function() {
+  var r = await nfBkpReq('object/list/backups', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix: '', limit: 200, offset: 0, sortBy: { column: 'name', order: 'desc' } }) });
+  var lista = await r.json();
+  return (Array.isArray(lista) ? lista : []).filter(function(o){ return /\.json$/.test(o.name); });
+};
+window.nfBackupFazer = async function(origem) {
+  if (!window.nfMontarBackup) throw new Error('Painel ainda carregando');
+  var dados = await window.nfMontarBackup();
+  dados.origem = origem || 'manual';
+  var agora = new Date();
+  var p2 = function(n){ return String(n).padStart(2, '0'); };
+  var nome = 'backup_' + agora.getFullYear() + '-' + p2(agora.getMonth() + 1) + '-' + p2(agora.getDate()) + '_' + p2(agora.getHours()) + p2(agora.getMinutes()) + p2(agora.getSeconds()) + '.json';
+  var texto = JSON.stringify(dados);
+  await nfBkpReq('object/backups/' + nome, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-upsert': 'false' }, body: texto });
+  try {
+    await sbFetchBase('/rest/v1/painel_config?on_conflict=chave', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ chave: 'ultimo_backup', valor: { quando: agora.toISOString(), arquivo: nome, por: dados.por, origem: dados.origem, tamanho: texto.length, contagem: dados.contagem }, atualizado_em: agora.toISOString() }) });
+  } catch (e) {}
+  return { nome: nome, tamanho: texto.length, contagem: dados.contagem };
+};
+window.nfBackupBaixar = async function(nome) {
+  var r = await nfBkpReq('object/authenticated/backups/' + encodeURIComponent(nome));
+  var blob = await r.blob();
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome;
+  document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+};
+window.nfBackupBaixarAgora = async function() {
+  var dados = await window.nfMontarBackup();
+  var nome = 'nuflow_backup_' + new Date().toISOString().slice(0, 10) + '.json';
+  var blob = new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome;
+  document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+};
+// ===== ABA ADMINISTRAÇÃO: backups, usuários e histórico =====
+var _admFiltro = { colecao: '', usuario: '', busca: '' };
+var _admHist = [];
+function admEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function admData(iso) { if (!iso) return '—'; var d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+function admTam(n) { n = Number(n || 0); return n > 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+var ADM_COLECOES = { bikes: 'Bikes (BH)', financeiro: 'Financeiro', gastos: 'Gastos', clientes: 'Clientes', submissoes: 'Captação / Sense', painel_config: 'Configurações', painel_usuarios: 'Usuários' };
+var ADM_ACOES = { criou: ['Criou', 'var(--green)'], alterou: ['Alterou', 'var(--blue)'], excluiu: ['Excluiu', 'var(--red)'] };
+
+async function nfRenderAdmin() {
+  var root = document.getElementById('admin-root');
+  if (!root) return;
+  if (!window.nfEhAdmin()) { root.innerHTML = '<div class="empty-state"><div class="empty-text">Área restrita a administradores.</div></div>'; return; }
+  root.innerHTML = '<div class="page-head"><div><div class="section-title" style="margin-bottom:4px">Administração</div><div class="page-sub">Backups, usuários do painel e histórico de alterações</div></div></div>' +
+    '<div class="adm-grid"><div class="card-pad" id="adm-backups"><div class="card-head">Backups</div><div class="loading pulse">carregando...</div></div>' +
+    '<div class="card-pad" id="adm-usuarios"><div class="card-head">Usuários e permissões</div><div class="loading pulse">carregando...</div></div></div>' +
+    '<div class="card-pad" id="adm-historico" style="margin-top:12px"><div class="card-head">Histórico de alterações</div><div class="loading pulse">carregando...</div></div>';
+  admBackups(); admUsuarios(); admHistorico();
+}
+window.nfRenderAdmin = nfRenderAdmin;
+
+async function admBackups() {
+  var el = document.getElementById('adm-backups'); if (!el) return;
+  var h = '<div class="card-head">Backups</div>';
+  var ult = null;
+  try { var r = await sbFetchBase('/rest/v1/painel_config?select=valor&chave=eq.ultimo_backup'); ult = r && r[0] && r[0].valor && r[0].valor.quando ? r[0].valor : null; } catch (e) {}
+  h += '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">' +
+    (ult ? 'Último backup: <b style="color:var(--text)">' + admData(ult.quando) + '</b> (' + (ult.origem === 'automatico' ? 'automático' : 'manual') + ', ' + admTam(ult.tamanho) + ')' +
+      (ult.contagem ? '<br><span style="color:var(--text3)">' + admEsc(Object.entries(ult.contagem).map(function(e){ return e[0].split('.')[1] + ': ' + e[1]; }).join(' · ')) + '</span>' : '')
+      : 'Nenhum backup feito ainda.') +
+    '<br><span style="color:var(--text3)">O painel faz um backup sozinho por dia, quando um administrador entra. Os arquivos ficam numa pasta privada do Supabase.</span></div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"><button class="btn btn-primary btn-sm" id="adm-bkp-btn" onclick="admFazerBackup()">Fazer backup agora</button>' +
+    '<button class="btn btn-sm" onclick="admBaixarAgora(this)">⬇ Baixar cópia para o computador</button><span id="adm-bkp-msg" style="font-size:12px;color:var(--text3);align-self:center"></span></div>';
+  try {
+    var lista = await window.nfBackupListar();
+    if (lista.length) {
+      h += '<div class="dre-lista" style="max-height:260px;overflow:auto">' + lista.slice(0, 60).map(function(o){
+        var m = o.name.match(/backup_(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})/);
+        var rot = m ? m[3] + '/' + m[2] + '/' + m[1] + ' ' + m[4] + ':' + m[5] : o.name;
+        var tam = o.metadata && o.metadata.size;
+        return '<div class="dre-item"><div><div class="dre-item-tit">' + rot + '</div><div class="dre-item-sub">' + (tam ? admTam(tam) : '') + '</div></div>' +
+          '<button class="btn btn-sm" data-n="' + admEsc(o.name) + '" onclick="admBaixar(this)">⬇ Baixar</button></div>';
+      }).join('') + '</div>';
+    }
+  } catch (e) {
+    h += '<div style="font-size:12.5px;color:var(--amber)">⚠️ Não foi possível listar os backups: ' + admEsc(e.message) + '. Confira se o SQL 7 (segurança) já foi rodado no Supabase.</div>';
+  }
+  el.innerHTML = h;
+}
+window.admFazerBackup = async function() {
+  var b = document.getElementById('adm-bkp-btn'), m = document.getElementById('adm-bkp-msg');
+  if (b) { b.disabled = true; b.textContent = 'Fazendo backup...'; }
+  try { var r = await window.nfBackupFazer('manual'); if (m) { m.style.color = 'var(--green)'; m.textContent = '✓ Backup salvo (' + admTam(r.tamanho) + ')'; } setTimeout(admBackups, 800); }
+  catch (e) { if (m) { m.style.color = 'var(--red)'; m.textContent = 'Erro: ' + e.message; } if (b) { b.disabled = false; b.textContent = 'Fazer backup agora'; } }
+};
+window.admBaixar = async function(btn) { var n = btn.getAttribute('data-n'); btn.disabled = true; try { await window.nfBackupBaixar(n); } catch (e) { alert('Não foi possível baixar: ' + e.message); } btn.disabled = false; };
+window.admBaixarAgora = async function(btn) { btn.disabled = true; var t = btn.textContent; btn.textContent = 'Gerando...'; try { await window.nfBackupBaixarAgora(); } catch (e) { alert('Erro: ' + e.message); } btn.disabled = false; btn.textContent = t; };
+
+async function admUsuarios() {
+  var el = document.getElementById('adm-usuarios'); if (!el) return;
+  var lista = [];
+  try { lista = await sbFetchBase('/rest/v1/painel_usuarios?select=*&order=papel.asc,email.asc'); } catch (e) {
+    el.innerHTML = '<div class="card-head">Usuários e permissões</div><div style="font-size:12.5px;color:var(--amber)">⚠️ ' + admEsc(e.message) + '. Confira se o SQL 7 (segurança) já foi rodado no Supabase.</div>'; return;
+  }
+  var eu = nfEmailLogado().toLowerCase();
+  var h = '<div class="card-head">Usuários e permissões</div>' +
+    '<div style="font-size:12.5px;color:var(--text3);line-height:1.55;margin-bottom:12px"><b style="color:var(--text2)">Administrador</b>: vê tudo. <b style="color:var(--text2)">Equipe</b>: estoque, cadastro, vendas, captação e clientes, sem DRE, Financeiro, Análise e Administração. Quem não está na lista é tratado como administrador.</div>';
+  h += '<div class="dre-lista">' + (lista.length ? lista.map(function(u){
+    var mesmo = String(u.email).toLowerCase() === eu;
+    return '<div class="dre-item"><div><div class="dre-item-tit">' + admEsc(u.nome || u.email) + (mesmo ? ' <span class="badge badge-ok">você</span>' : '') + '</div><div class="dre-item-sub">' + admEsc(u.email) + '</div></div>' +
+      '<div style="display:flex;gap:6px;align-items:center"><select class="sel" data-e="' + admEsc(u.email) + '" onchange="admMudarPapel(this)"' + (mesmo ? ' disabled title="Você não pode mudar o seu próprio papel"' : '') + '>' +
+      '<option value="admin"' + (u.papel === 'admin' ? ' selected' : '') + '>Administrador</option><option value="equipe"' + (u.papel === 'equipe' ? ' selected' : '') + '>Equipe</option></select>' +
+      (mesmo ? '' : '<button class="btn btn-sm btn-danger" data-e="' + admEsc(u.email) + '" onclick="admRemover(this)" title="Tirar da lista">✕</button>') + '</div></div>';
+  }).join('') : '<div style="font-size:13px;color:var(--text3)">Ninguém na lista ainda.</div>') + '</div>';
+  h += '<div class="sell-grid" style="margin:12px 0 6px"><div class="fg"><label>Nome</label><input id="adm-u-nome" placeholder="ex: João (vendedor)"></div>' +
+    '<div class="fg"><label>E-mail de login</label><input id="adm-u-email" type="email" placeholder="email@exemplo.com"></div>' +
+    '<div class="fg"><label>Papel</label><select id="adm-u-papel"><option value="equipe">Equipe</option><option value="admin">Administrador</option></select></div></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="admAdicionar()">Adicionar à lista</button><span id="adm-u-msg" style="font-size:12px;color:var(--text3)"></span></div>' +
+    '<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Para a pessoa conseguir entrar, o login dela (mesmo e-mail e senha) precisa existir no Firebase (Authentication) e no Supabase (Authentication › Users).</div>';
+  el.innerHTML = h;
+}
+window.admAdicionar = async function() {
+  var email = (document.getElementById('adm-u-email').value || '').trim().toLowerCase();
+  var nome = (document.getElementById('adm-u-nome').value || '').trim();
+  var papel = document.getElementById('adm-u-papel').value;
+  var m = document.getElementById('adm-u-msg');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { m.style.color = 'var(--red)'; m.textContent = 'Informe um e-mail válido.'; return; }
+  try {
+    await sbFetch('/rest/v1/painel_usuarios?on_conflict=email', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ email: email, nome: nome || null, papel: papel }) });
+    admUsuarios();
+  } catch (e) { m.style.color = 'var(--red)'; m.textContent = 'Erro: ' + e.message; }
+};
+window.admMudarPapel = async function(sel) {
+  var email = sel.getAttribute('data-e');
+  try { await sbFetch('/rest/v1/painel_usuarios?email=eq.' + encodeURIComponent(email), { method: 'PATCH', body: JSON.stringify({ papel: sel.value }) }); }
+  catch (e) { alert('Não foi possível mudar: ' + e.message); admUsuarios(); }
+};
+window.admRemover = async function(btn) {
+  var email = btn.getAttribute('data-e');
+  if (!confirm('Tirar ' + email + ' da lista?\nSem estar na lista, a pessoa passa a ser tratada como administrador.\nPara bloquear o acesso de vez, apague o login dela no Firebase e no Supabase.')) return;
+  try { await sbFetch('/rest/v1/painel_usuarios?email=eq.' + encodeURIComponent(email), { method: 'DELETE' }); admUsuarios(); }
+  catch (e) { alert('Não foi possível remover: ' + e.message); }
+};
+
+async function admHistorico() {
+  var el = document.getElementById('adm-historico'); if (!el) return;
+  try { _admHist = await sbFetchBase('/rest/v1/auditoria?select=*&order=quando.desc&limit=500'); if (!Array.isArray(_admHist)) _admHist = []; }
+  catch (e) { el.innerHTML = '<div class="card-head">Histórico de alterações</div><div style="font-size:12.5px;color:var(--amber)">⚠️ ' + admEsc(e.message) + '. Confira se o SQL 7 (segurança) já foi rodado no Supabase.</div>'; return; }
+  admDesenharHistorico();
+}
+function admDesenharHistorico() {
+  var el = document.getElementById('adm-historico'); if (!el) return;
+  var usuarios = []; _admHist.forEach(function(r){ if (r.usuario && usuarios.indexOf(r.usuario) < 0) usuarios.push(r.usuario); });
+  var cols = []; _admHist.forEach(function(r){ if (r.colecao && cols.indexOf(r.colecao) < 0) cols.push(r.colecao); });
+  var b = _admFiltro.busca.toLowerCase();
+  var lista = _admHist.filter(function(r){
+    if (_admFiltro.colecao && r.colecao !== _admFiltro.colecao) return false;
+    if (_admFiltro.usuario && r.usuario !== _admFiltro.usuario) return false;
+    if (b && (String(r.resumo || '') + ' ' + JSON.stringify(r.depois || {}) + ' ' + JSON.stringify(r.antes || {})).toLowerCase().indexOf(b) < 0) return false;
+    return true;
+  });
+  var h = '<div class="card-head">Histórico de alterações <span style="font-weight:400;color:var(--text3)">· últimas ' + _admHist.length + '</span></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+    '<input class="sel" style="flex:1;min-width:180px" placeholder="Buscar (bike, valor, nome...)" value="' + admEsc(_admFiltro.busca) + '" oninput="admFiltrar(\'busca\',this.value)">' +
+    '<select class="sel" onchange="admFiltrar(\'colecao\',this.value)"><option value="">Tudo</option>' + cols.map(function(c){ return '<option value="' + admEsc(c) + '"' + (_admFiltro.colecao === c ? ' selected' : '') + '>' + admEsc(ADM_COLECOES[c] || c) + '</option>'; }).join('') + '</select>' +
+    '<select class="sel" onchange="admFiltrar(\'usuario\',this.value)"><option value="">Todos os usuários</option>' + usuarios.map(function(u){ return '<option value="' + admEsc(u) + '"' + (_admFiltro.usuario === u ? ' selected' : '') + '>' + admEsc(u) + '</option>'; }).join('') + '</select>' +
+    '<button class="btn btn-sm" onclick="admHistorico()">↻ Atualizar</button></div>';
+  if (!lista.length) { h += '<div style="font-size:13px;color:var(--text3)">' + (_admHist.length ? 'Nada encontrado com esse filtro.' : 'Nenhuma alteração registrada ainda. A partir de agora, tudo o que for criado, alterado ou excluído aparece aqui.') + '</div>'; el.innerHTML = h; return; }
+  h += '<div class="dre-lista">' + lista.slice(0, 300).map(function(r, i){
+    var ac = ADM_ACOES[r.acao] || [r.acao, 'var(--text2)'];
+    var detalhe = admDiff(r);
+    return '<div class="dre-item" style="border-left:2px solid ' + ac[1] + ';display:block">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;cursor:' + (detalhe ? 'pointer' : 'default') + '" onclick="admToggle(' + i + ')">' +
+      '<div><div class="dre-item-tit"><span style="color:' + ac[1] + '">' + ac[0] + '</span> · ' + admEsc(ADM_COLECOES[r.colecao] || r.colecao || '') + (r.resumo ? ' · ' + admEsc(r.resumo) : '') + '</div>' +
+      '<div class="dre-item-sub">' + admData(r.quando) + ' · ' + admEsc(r.usuario || 'desconhecido') + '</div></div>' +
+      (detalhe ? '<span style="font-size:12px;color:var(--text3)">detalhes ▸</span>' : '') + '</div>' +
+      (detalhe ? '<div id="adm-det-' + i + '" style="display:none;margin-top:8px">' + detalhe + '</div>' : '') + '</div>';
+  }).join('') + '</div>';
+  el.innerHTML = h;
+}
+function admVal(v) { if (v == null || v === '') return '<span style="color:var(--text3)">—</span>'; if (typeof v === 'object') return admEsc(JSON.stringify(v).slice(0, 160)); return admEsc(String(v).slice(0, 160)); }
+function admDiff(r) {
+  var a = r.antes || {}, d = r.depois || {};
+  var chaves = Object.keys(Object.assign({}, a, d)).filter(function(k){ return ['atualizado_em', 'atualizadoEm', 'criadoEm', 'criado_em'].indexOf(k) < 0; });
+  if (!chaves.length) return '';
+  var linhas = chaves.filter(function(k){ return JSON.stringify(a[k]) !== JSON.stringify(d[k]); }).slice(0, 40).map(function(k){
+    return '<tr><td style="color:var(--text3);padding:3px 10px 3px 0;white-space:nowrap">' + admEsc(k) + '</td>' +
+      (r.acao === 'alterou' ? '<td style="padding:3px 10px 3px 0;color:var(--red);text-decoration:line-through">' + admVal(a[k]) + '</td>' : '') +
+      '<td style="padding:3px 0;color:' + (r.acao === 'excluiu' ? 'var(--text2)' : 'var(--green)') + '">' + admVal(r.acao === 'excluiu' ? a[k] : d[k]) + '</td></tr>';
+  });
+  if (!linhas.length) return '';
+  return '<table style="font-size:12px;border-collapse:collapse">' + linhas.join('') + '</table>';
+}
+window.admToggle = function(i) { var e = document.getElementById('adm-det-' + i); if (e) e.style.display = e.style.display === 'none' ? 'block' : 'none'; };
+window.admFiltrar = function(k, v) { _admFiltro[k] = v; admDesenharHistorico(); if (k === 'busca') { var inp = document.querySelector('#adm-historico input'); if (inp) { inp.focus(); inp.setSelectionRange(v.length, v.length); } } };
+window.admHistorico = admHistorico;
+
+// Backup automático: uma vez por dia, quando um administrador abre o painel
+window.nfBackupAutomatico = async function() {
+  if (!window.nfEhAdmin()) return;
+  try {
+    var r = await sbFetchBase('/rest/v1/painel_config?select=valor&chave=eq.ultimo_backup');
+    var ult = Array.isArray(r) && r[0] && r[0].valor && r[0].valor.quando ? new Date(r[0].valor.quando) : null;
+    if (ult && (Date.now() - ult.getTime()) < 20 * 3600 * 1000) return;
+    var feito = await window.nfBackupFazer('automatico');
+    console.log('[backup] automático feito:', feito.nome);
+    var sa = document.getElementById('sec-admin'); if (sa && sa.classList.contains('active')) nfRenderAdmin();
+  } catch (e) { console.warn('[backup] automático não foi feito:', e && e.message); }
+};
 
 async function loadCapData() {
   var root = capRoot();
@@ -7650,7 +8027,7 @@ async function salvarCliente(tipo, dados) {
   }
   try {
     const {collection:_col, getDocs:_getDocs, addDoc:_addDoc, updateDoc:_updateDoc, query:_query, where:_where, doc:_doc}
-      = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      = window.__fsAudit;
     const clientesCol = _col(db, 'clientes');
 
     // Buscar cliente já existente: CPF → e-mail → telefone → nome (nesta ordem de prioridade)
