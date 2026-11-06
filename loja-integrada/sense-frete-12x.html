@@ -4,6 +4,7 @@
     Descrição: Sense - frete grátis e 12x
     Local de publicação: Rodapé
     Página: Todas as páginas
+  (Se você já tinha colado a versão anterior, apague o conteúdo antigo e cole este no lugar.)
     Tipo: HTML
   O que faz (SÓ nas bikes da categoria "Seminovas de Fábrica Sense"; o resto da loja não muda):
     • Página do produto: esconde a tabela de parcelamento, troca o "até Nx" por "12x de R$ … sem juros" e mostra o selo.
@@ -11,12 +12,20 @@
   Para desligar: desative este código no mesmo menu.
 -->
 <style>
-  .nf-sense-selo{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:14px 0;padding:12px 16px;border-radius:10px;
+  .nf-sense-selo{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:10px 0 14px;padding:12px 16px;border-radius:10px;width:100%;flex-basis:100%;box-sizing:border-box;
     background:#eef8f1;border:1px solid #bfe3cb;color:#1d5a35;font-size:14px;font-weight:600;line-height:1.35}
   .nf-sense-selo span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
   .nf-sense-selo small{display:block;width:100%;font-weight:400;font-size:12px;color:#3d6b4f}
   .nf-sense-12x{color:#1d5a35!important;font-weight:600}
+  .nf-sense-tabela{margin:16px 0;border:1px solid #dfe6e1;border-radius:10px;overflow:hidden;background:#fff}
+  .nf-sense-tabela-tit{padding:10px 16px;background:#1f2a1b;color:#c6f432;font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+  .nf-sense-tabela ul{list-style:none;margin:0;padding:10px 16px;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+  .nf-sense-tabela li{font-size:14px;color:#333;padding:3px 0;border-bottom:1px dashed #edf0ee;margin:0}
+  .nf-sense-tabela li em{font-style:normal;color:#1d5a35;font-weight:600;font-size:12px}
+  @media(max-width:600px){.nf-sense-tabela ul{grid-template-columns:1fr}}
   .nf-sense-oculto{display:none!important}
+  .nf-sense-tabela ul.nf-sense-oculto{display:grid!important} /* nunca esconder a nossa própria tabela */
+  .nf-sense-tabela .nf-sense-tabela-tit.nf-sense-oculto{display:block!important}
 </style>
 <script>
 (function () {
@@ -45,7 +54,7 @@
   }
   function brl(v) { return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function precoDoProduto() {
-    var meta = document.querySelector('[itemprop="price"]');
+    var meta = document.querySelector('.principal [itemprop="price"]') || document.querySelector('[itemprop="price"]');
     var v = meta ? Number(String(meta.getAttribute('content') || '').replace(',', '.')) : 0;
     if (v > 0) return v;
     var el = document.querySelector('.preco-promocional, .preco-venda, .preco-produto strong, .preco-produto');
@@ -71,7 +80,7 @@
     var cand = document.querySelectorAll('ul, ol, table, dl, div, section');
     for (var j = 0; j < cand.length; j++) {
       var el = cand[j];
-      if (el.classList.contains('nf-sense-oculto') || el.closest('.nf-sense-oculto, .nf-sense-selo')) continue;
+      if (el.classList.contains('nf-sense-oculto') || el.closest('.nf-sense-oculto, .nf-sense-selo, .nf-sense-tabela')) continue;
       if (el.querySelector('form, button, input, select, img')) continue;
       if (contaParcelas(el) < 4) continue;
       // pega só o bloco mais interno que ainda tem a lista inteira
@@ -101,15 +110,33 @@
       el.innerHTML = '<span class="nf-sense-12x">' + (curto ? '' : 'ou ') + PARCELAS + 'x de ' + brl(Math.round(p / PARCELAS * 100) / 100) + ' sem juros' + (curto ? ' · frete grátis' : '') + '</span>';
     }
   }
+  function brl2(v) { return brl(Math.round(v * 100) / 100); }
+  // Bloco do preço que aparece de verdade na página (o tema tem cópias escondidas no carrinho)
+  function precoVisivel() {
+    var els = document.querySelectorAll('.principal .preco-produto, .principal [itemprop="offers"]');
+    for (var i = 0; i < els.length; i++) { if (els[i].getBoundingClientRect().height > 0) return els[i]; }
+    return els[0] || null;
+  }
   function selo(preco) {
-    if (document.querySelector('.nf-sense-selo')) return;
+    if (document.querySelector('.principal .nf-sense-selo')) return;
     var box = document.createElement('div');
     box.className = 'nf-sense-selo';
-    box.innerHTML = '<span>🚚 Frete grátis para todo o Brasil</span><span>💳 ' + PARCELAS + 'x sem juros' + (preco ? ' de ' + brl(Math.round(preco / PARCELAS * 100) / 100) : '') + '</span>' +
+    box.innerHTML = '<span>🚚 Frete grátis para todo o Brasil</span><span>💳 ' + PARCELAS + 'x sem juros' + (preco ? ' de ' + brl2(preco / PARCELAS) : '') + '</span>' +
       '<span>✅ Garantia de fábrica Sense</span>';
-    var ancora = document.querySelector('.acoes-produto, .preco-produto, .principal .preco, [itemprop="offers"]');
+    var pv = precoVisivel();
+    var ancora = pv ? (pv.parentElement && pv.parentElement.closest('.acoes-produto') ? pv.parentElement : pv) : document.querySelector('.principal h1');
     if (ancora && ancora.parentNode) ancora.parentNode.insertBefore(box, ancora.nextSibling);
-    else { var h1 = document.querySelector('h1'); if (h1 && h1.parentNode) h1.parentNode.insertBefore(box, h1.nextSibling); }
+  }
+  // Tabela própria: 1x a 12x, todas sem juros
+  function tabela(preco) {
+    if (!preco || document.querySelector('.principal .nf-sense-tabela')) return;
+    var linhas = '';
+    for (var n = 1; n <= PARCELAS; n++) linhas += '<li><b>' + n + 'x</b> de ' + brl2(preco / n) + ' <em>sem juros</em></li>';
+    var box = document.createElement('div');
+    box.className = 'nf-sense-tabela';
+    box.innerHTML = '<div class="nf-sense-tabela-tit">Parcelamento no cartão · sem juros</div><ul>' + linhas + '</ul>';
+    var depois = document.querySelector('.principal .acoes-produto .comprar') || document.querySelector('.principal .acoes-produto') || document.querySelector('.principal .nf-sense-selo');
+    if (depois && depois.parentNode) depois.parentNode.insertBefore(box, depois.nextSibling);
   }
 
   function aplicar() {
@@ -120,6 +147,7 @@
     var area = document.querySelector('.principal, .info-principal-produto, [itemtype*="schema.org/Product"]') || document.body;
     trocarTextoParcela(area, preco, false);
     selo(preco);
+    tabela(preco);
   }
 
   var agendado = null;
