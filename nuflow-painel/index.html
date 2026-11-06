@@ -9,6 +9,10 @@
 <meta name="theme-color" content="#0a0c10">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// Data de hoje no fuso de Brasília (antes usava UTC: depois das 21h o painel sugeria o dia seguinte)
+function hojeLocal(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+</script>
 <script>if(window.Chart){Chart.defaults.font.family="Inter, system-ui, sans-serif";Chart.defaults.color="#8a93a6";Chart.defaults.borderColor="#1d232e";}</script>
 <style>
 :root{
@@ -267,6 +271,7 @@ header{background:rgba(10,12,16,.82);backdrop-filter:saturate(160%) blur(14px);-
 .pulse{animation:pulse 1.5s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
 .adm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.troca-box{background:var(--bg2);border:1px dashed var(--border2);border-radius:var(--radius-sm);padding:.9rem 1rem;margin:0 0 1rem;}
 /* Equipe: esconde o que é só de administrador */
 body.nf-equipe .nf-so-admin{display:none!important;}
 @media(max-width:900px){.dre-resumo,.adm-grid{grid-template-columns:1fr;}}
@@ -1093,7 +1098,7 @@ function renderEstoque(){
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
           ${nota!==null?`<div class="nota-badge nota-${notaClass(nota)}">${nota}</div>`:''}
-          ${isProprio?'<span class="badge badge-proprio">Própria</span>':''}
+          ${isProprio?'<span class="badge badge-proprio">Própria</span>':''}${b.origemTroca?`<span class="badge badge-check" title="Entrou na troca da venda de ${esc(b.origemTroca.bike||'')}">🔁 Entrou na troca</span>`:''}
           ${hasCheck?'<span class="badge badge-check">✓ Check</span>':'<span class="badge badge-pending">Sem check</span>'}
           ${hasNF?'<span class="badge badge-nf">✓ NF</span>':''}
           <span class="badge ${slow?'badge-slow':'badge-ok'}">${dias}d</span>
@@ -1187,7 +1192,7 @@ function renderEstoque(){
           <div class="fg"><label>Endereço completo</label><input type="text" id="sv-end-${b._docId}" placeholder="Rua, nº, bairro" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Cidade</label><input type="text" id="sv-cidade-${b._docId}" placeholder="Belo Horizonte" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Estado</label><input type="text" id="sv-estado-${b._docId}" placeholder="MG" maxlength="2" oninput="salvarRascunhoVenda('${b._docId}')"></div>
-          <div class="fg"><label>Data da venda</label><input type="date" id="sv-data-${b._docId}" value="${new Date().toISOString().split('T')[0]}" oninput="salvarRascunhoVenda('${b._docId}')"></div>
+          <div class="fg"><label>Data da venda</label><input type="date" id="sv-data-${b._docId}" value="${hojeLocal()}" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Valor de venda (R$)</label><input type="number" id="sv-valor-${b._docId}" placeholder="${b.precoEst||b.valor}" oninput="calcComissaoVenda('${b._docId}');salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Valor do sinal (R$)</label><input type="number" id="sv-sinal-${b._docId}" placeholder="0" oninput="salvarRascunhoVenda('${b._docId}')"></div>
           <div class="fg"><label>Forma de pagamento</label>
@@ -1206,6 +1211,25 @@ function renderEstoque(){
           </div>
           <div class="fg gcol2"><label>Observações para o contrato (opcional)</label>
             <textarea id="sv-obs-contrato-${b._docId}" rows="2" placeholder="Escreva livremente — depois peça pra Claudete formalizar o texto antes de colar aqui. Ex: cliente pediu pra trocar o pneu antes de buscar a bike" oninput="salvarRascunhoVenda('${b._docId}')" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-family:Inter,sans-serif;outline:none;width:100%;resize:vertical">${b.obsContrato||''}</textarea>
+          </div>
+        </div>
+        <div class="troca-box">
+          <label class="chk" style="background:transparent;border:none;padding:0"><input type="checkbox" id="sv-troca-${b._docId}" onchange="toggleTroca('${b._docId}')"> Houve troca nesta venda (o comprador deu uma bike como parte do pagamento)</label>
+          <div id="sv-troca-campos-${b._docId}" style="display:none;margin-top:12px">
+            <div style="font-size:12.5px;color:var(--text3);margin-bottom:10px">A bike que entrou vai para o estoque como <b style="color:var(--text2)">Compra própria</b>, com o comprador como dono anterior.</div>
+            <div class="sell-grid">
+              <div class="fg"><label>Marca</label><input type="text" id="tr-marca-${b._docId}" placeholder="ex: Specialized"></div>
+              <div class="fg"><label>Modelo</label><input type="text" id="tr-modelo-${b._docId}" placeholder="ex: Stumpjumper"></div>
+              <div class="fg"><label>Versão</label><input type="text" id="tr-versao-${b._docId}" placeholder="ex: Comp Alloy"></div>
+              <div class="fg"><label>Ano</label><input type="text" id="tr-ano-${b._docId}" placeholder="ex: 2022" maxlength="4"></div>
+              <div class="fg"><label>Tamanho</label><input type="text" id="tr-tamanho-${b._docId}" placeholder="ex: M / S3"></div>
+              <div class="fg"><label>Tipo</label><select id="tr-tipo-${b._docId}"><option value="">Selecione</option><option>Trail</option><option>Enduro</option><option>Downhill</option><option>E-MTB</option><option>XC</option><option>Speed</option><option>Gravel</option><option>Urban</option></select></div>
+              <div class="fg"><label>O que entrou</label><select id="tr-composicao-${b._docId}">${compOptions('completa')}</select></div>
+              <div class="fg"><label>Nº de série</label><input type="text" id="tr-serie-${b._docId}" placeholder="opcional"></div>
+              <div class="fg"><label>Valor que entrou na troca (R$)</label><input type="number" id="tr-entrada-${b._docId}" placeholder="quanto foi abatido" oninput="calcTroca('${b._docId}')"></div>
+              <div class="fg"><label>Valor de anúncio (R$)</label><input type="number" id="tr-anuncio-${b._docId}" placeholder="por quanto vamos anunciar" oninput="calcTroca('${b._docId}')"></div>
+            </div>
+            <div id="sv-troca-resumo-${b._docId}" style="font-size:12.5px;color:var(--text2)"></div>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1569,7 +1593,7 @@ window.baixarBikeCheckPDF=async function(id){
     font('bold',7);rgb(...VD);doc.text('NUFLOW',ML,H-8);
   }
 
-  const nm='laudo_'+(bike.marca||'bike').replace(/\s+/g,'_')+'_'+(bike.modelo||'').replace(/\s+/g,'_')+'_'+(bike.dataVenda||new Date().toISOString().split('T')[0])+'.pdf';
+  const nm='laudo_'+(bike.marca||'bike').replace(/\s+/g,'_')+'_'+(bike.modelo||'').replace(/\s+/g,'_')+'_'+(bike.dataVenda||hojeLocal())+'.pdf';
   doc.save(nm);
 };
 function gerarAcoesVendida(b){
@@ -1628,7 +1652,7 @@ window.gerarContratoVenda=async function(id){
     compradorCEP:bike.compradorCEP||'',
     valorVenda:bike.valorVenda||bike.valor,valorSinal:bike.valorSinal||0,
     formaPagamento:bike.formaPagamento||'PIX',
-    dataVenda:bike.dataVenda||new Date().toISOString().split('T')[0],
+    dataVenda:bike.dataVenda||hojeLocal(),
     marca:bike.marca||'',modelo:bike.modelo||'',versao:bike.versao||'',
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
     cor:bike.cor||'',ano:bike.ano||'',composicao:compLabel(bike),
@@ -1738,7 +1762,7 @@ function renderVendidas(){
       <!-- Topo clicável para expandir -->
       <div class="bike-top" style="cursor:pointer" onclick="toggleDetalheVenda('${b._docId}')">
         <div>
-          <div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>${compBadge(b)}</div>
+          <div class="bike-name">${b.marca} ${b.modelo} <span style="font-weight:400;color:var(--text3)">${b.versao||''}</span>${compBadge(b)}${b.troca?'<span class="badge badge-check" style="margin-left:6px;vertical-align:middle">🔁 Com troca</span>':''}</div>
           <div class="bike-sub-info">${[b.tipo,b.tamanho,b.dataVenda?new Date(b.dataVenda+'T12:00:00').toLocaleDateString('pt-BR'):''].filter(Boolean).join(' · ')}</div>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
@@ -1770,6 +1794,13 @@ function renderVendidas(){
         </div>
       </div>
 
+      ${b.troca?`<div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text2);display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <span>🔁 <b style="color:var(--text)">Troca:</b> ${esc([b.troca.marca,b.troca.modelo,b.troca.versao,b.troca.ano].filter(Boolean).join(' '))}</span>
+        <span>entrou por <b style="color:var(--amber)">${fmtRInt(b.troca.valorEntrada)}</b></span>
+        <span>anúncio <b style="color:var(--green)">${fmtRInt(b.troca.valorAnuncio)}</b></span>
+        <span>pago em dinheiro <b style="color:var(--text)">${fmtRInt(b.valorEmDinheiro??(Number(b.valorVenda||0)-Number(b.troca.valorEntrada||0)))}</b></span>
+        ${(()=>{const t=bikes.find(x=>x._docId===b.troca.bikeId);return t?(t.vendida?`<span class="badge badge-sold">bike da troca já vendida</span>`:`<span class="badge badge-ok">bike da troca no estoque</span>`):'<span class="badge badge-slow">bike da troca não encontrada</span>';})()}
+      </div>`:''}
       <!-- Painel expansível de detalhes -->
       <div id="detalhe-venda-${b._docId}" style="display:none">
         <div style="padding:.875rem 1rem;display:grid;grid-template-columns:1fr 1fr;gap:1rem;border-bottom:1px solid var(--border)">
@@ -2829,6 +2860,30 @@ window.removerBike=async function(id){
   }catch(e){console.error(e);setSyncStatus('error');alert('Erro ao remover bike.');}
 };
 
+// ===== TROCA NA VENDA =====
+window.toggleTroca=function(id){
+  const on=document.getElementById('sv-troca-'+id)?.checked;
+  const box=document.getElementById('sv-troca-campos-'+id);
+  if(box)box.style.display=on?'block':'none';
+  if(on)calcTroca(id);
+};
+window.calcTroca=function(id){
+  const v=k=>Number(document.getElementById(k+id)?.value||0);
+  const venda=v('sv-valor-')||Number(bikes.find(b=>b._docId===id)?.valor||0);
+  const entrada=v('tr-entrada-'),anuncio=v('tr-anuncio-');
+  const el=document.getElementById('sv-troca-resumo-'+id);if(!el)return;
+  const partes=[];
+  if(venda&&entrada)partes.push(`Valor da venda ${fmtRInt(venda)} − bike na troca ${fmtRInt(entrada)} = <b style="color:var(--text)">${fmtRInt(venda-entrada)} pagos em dinheiro</b>`);
+  if(entrada&&anuncio)partes.push(`Margem prevista na bike que entrou: <b style="color:${anuncio-entrada>=0?'var(--green)':'var(--red)'}">${fmtRInt(anuncio-entrada)}</b>`);
+  el.innerHTML=partes.join('<br>');
+};
+function lerTroca(id){
+  if(!document.getElementById('sv-troca-'+id)?.checked)return null;
+  const g=k=>{const el=document.getElementById(k+id);return el?el.value.trim():'';};
+  return {marca:g('tr-marca-'),modelo:g('tr-modelo-'),versao:g('tr-versao-'),ano:g('tr-ano-'),tamanho:g('tr-tamanho-'),tipo:g('tr-tipo-'),
+    composicao:g('tr-composicao-')||'completa',serie:g('tr-serie-'),valorEntrada:Number(g('tr-entrada-'))||0,valorAnuncio:Number(g('tr-anuncio-'))||0};
+}
+
 window.registrarVenda=async function(id){
   const bike=bikes.find(b=>b._docId===id);
   if(!bike)return;
@@ -2836,7 +2891,13 @@ window.registrarVenda=async function(id){
   const comprador=g('sv-comp-'+id);
   const compradorEmail=g('sv-email-'+id);
   if(!comprador||!compradorEmail){alert('Preencha ao menos nome e e-mail do comprador.');return;}
-  const dataVenda=g('sv-data-'+id)||new Date().toISOString().split('T')[0];
+  const troca=lerTroca(id);
+  if(troca){
+    if(!troca.marca||!troca.modelo){alert('Troca: informe a marca e o modelo da bike que entrou.');return;}
+    if(!troca.valorEntrada){alert('Troca: informe o valor que a bike entrou na troca.');return;}
+    if(!troca.valorAnuncio){alert('Troca: informe o valor de anúncio da bike que entrou.');return;}
+  }
+  const dataVenda=g('sv-data-'+id)||hojeLocal();
   const valorVenda=Number(g('sv-valor-'+id))||Number(bike.precoEst||bike.valor);
   const comissaoRecebidaRaw=Number(g('sv-com-'+id))||0;
   // Se campo zerado, calcular 8% automaticamente com piso/teto
@@ -2861,6 +2922,19 @@ window.registrarVenda=async function(id){
       compradorEnd,compradorCidade,compradorEstado,compradorCEP,
       valorSinal,formaPagamento,obsContrato,diasParaVender
     });
+    // Bike que entrou na troca: vai para o estoque como compra própria
+    if(troca){
+      try{
+        const vendedorTroca={nome:comprador,cpf:compradorCPF,email:compradorEmail,tel:compradorTel,cep:compradorCEP,rua:compradorEnd,cidade:compradorCidade,estado:(compradorEstado||'').toUpperCase()};
+        const nova=await addDoc(bikesCol,{
+          marca:troca.marca,modelo:troca.modelo,versao:troca.versao,ano:troca.ano,tamanho:troca.tamanho,tipo:troca.tipo,composicao:troca.composicao,serie:troca.serie,
+          aquisicao:'proprio',custo:troca.valorEntrada,precoEst:troca.valorAnuncio,valor:troca.valorAnuncio,
+          dataEntrada:dataVenda,vendedor:vendedorTroca,vendida:false,criadoEm:new Date().toISOString(),
+          origemTroca:{vendaBikeId:id,bike:[bike.marca,bike.modelo,bike.versao].filter(Boolean).join(' '),dataVenda}
+        });
+        await updateDoc(doc(db,'bikes',id),{troca:{bikeId:nova.id,marca:troca.marca,modelo:troca.modelo,versao:troca.versao,ano:troca.ano,valorEntrada:troca.valorEntrada,valorAnuncio:troca.valorAnuncio},valorEmDinheiro:valorVenda-troca.valorEntrada});
+      }catch(et){console.error(et);alert('A venda foi registrada, mas a bike da troca não foi cadastrada: '+et.message+'\nCadastre ela pela aba Cadastrar bike.');}
+    }
     // Lançamento financeiro automático — divisão de comissão
     try{
       const {addDoc:_addDoc}=window.__fsAudit;
@@ -2942,8 +3016,13 @@ window.salvarEdicaoVenda=async function(id){
 
 window.estornarVenda=async function(id){
   if(!confirm('Estornar esta venda?\nA bike voltará para o estoque e os lançamentos financeiros serão removidos.'))return;
+  const vendaB=bikes.find(b=>b._docId===id);
+  const bikeTroca=vendaB?.troca?.bikeId?bikes.find(b=>b._docId===vendaB.troca.bikeId):null;
+  const removerTroca=bikeTroca&&!bikeTroca.vendida&&confirm('Essa venda teve troca: '+[bikeTroca.marca,bikeTroca.modelo].filter(Boolean).join(' ')+' entrou no estoque.\nRemover também essa bike do estoque?');
   setSyncStatus('saving');
   try{
+    if(removerTroca)await deleteDoc(doc(db,'bikes',bikeTroca._docId));
+    if(vendaB?.troca)await updateDoc(doc(db,'bikes',id),{troca:null,valorEmDinheiro:null});
     // 1. Reverter bike para estoque
     await updateDoc(doc(db,'bikes',id),{
       vendida:false,
@@ -3314,7 +3393,7 @@ window.gerarContrato=async function(id){
     valorVenda:Number(g('sv-valor-'+id))||Number(bike.precoEst||bike.valor),
     valorSinal:Number(g('sv-sinal-'+id))||0,
     formaPagamento:g('sv-pgto-'+id)||'PIX',
-    dataVenda:g('sv-data-'+id)||new Date().toISOString().split('T')[0],
+    dataVenda:g('sv-data-'+id)||hojeLocal(),
     marca:bike.marca||'',modelo:bike.modelo||'',versao:bike.versao||'',
     tipo:bike.tipo||'',tamanho:bike.tamanho||'',serie:bike.serie||'',
     cor:bike.cor||'',ano:bike.ano||'',composicao:compLabel(bike),
@@ -3399,7 +3478,7 @@ window.cadastrarEGerarConsignacao=async function(){
   const marca=g('n-marca'),modelo=g('n-modelo'),versao=g('n-versao');
   const tamanho=g('n-tamanho'),tipo=g('n-tipo');
   const aquisicao=g('n-aquisicao')||'consignado';
-  const valor=g('n-valor'),dataEntrada=g('n-data')||new Date().toISOString().split('T')[0];
+  const valor=g('n-valor'),dataEntrada=g('n-data')||hojeLocal();
   const custo=g('n-custo'),precoEst=g('n-preco-est');
   // Sem campos obrigatórios — apenas e-mail do vendedor é necessário para gerar contrato
   if(!g('v-email')){alert('Para gerar o contrato, informe o e-mail do vendedor.');return;}
@@ -3417,7 +3496,7 @@ window.cadastrarEGerarConsignacao=async function(){
     ['n-marca','n-modelo','n-versao','n-tamanho','n-valor','n-custo','n-preco-est','n-serie','v-nome','v-cpf','v-email','v-tel','v-cep','v-rua','v-numero','v-comp','v-bairro','v-cidade','v-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('n-tipo').value='';document.getElementById('n-aquisicao').value='consignado';
     ['n-composicao','n-ano'].forEach(id=>{const el=document.getElementById(id);if(el)el.selectedIndex=0;});
-    document.getElementById('n-data').value=new Date().toISOString().split('T')[0];
+    document.getElementById('n-data').value=hojeLocal();
     document.getElementById('proprio-block')?.classList.remove('show');
     document.getElementById('com-preview').textContent='Preencha o valor';
     // Salvar vendedor no banco de clientes — sempre que houver algum dado (nome, cpf, email ou tel)
@@ -3663,7 +3742,7 @@ window.cadastrarBike=async function(){
   const marca=g('n-marca'),modelo=g('n-modelo'),versao=g('n-versao');
   const tamanho=g('n-tamanho'),tipo=g('n-tipo');
   const aquisicao=g('n-aquisicao')||'consignado';
-  const valor=g('n-valor'),dataEntrada=g('n-data')||new Date().toISOString().split('T')[0];
+  const valor=g('n-valor'),dataEntrada=g('n-data')||hojeLocal();
   const custo=g('n-custo'),precoEst=g('n-preco-est');
   // Sem campos obrigatórios
   const vendedor={nome:g('v-nome'),cpf:g('v-cpf'),email:g('v-email'),tel:g('v-tel'),cep:g('v-cep'),rua:g('v-rua'),numero:g('v-numero'),comp:g('v-comp'),bairro:g('v-bairro'),cidade:g('v-cidade'),estado:(g('v-estado')||'').toUpperCase()};
@@ -3692,7 +3771,7 @@ window.cadastrarBike=async function(){
     document.getElementById('n-tipo').value='';
     document.getElementById('n-aquisicao').value='consignado';
     ['n-composicao','n-ano'].forEach(id=>{const el=document.getElementById(id);if(el)el.selectedIndex=0;});
-    document.getElementById('n-data').value=new Date().toISOString().split('T')[0];
+    document.getElementById('n-data').value=hojeLocal();
     document.getElementById('proprio-block')?.classList.remove('show');
     document.getElementById('com-preview').textContent='Preencha o valor';
     document.getElementById('com-preview').style.color='var(--text3)';
@@ -3737,7 +3816,7 @@ window.toggleGasto=function(){
 window.salvarGasto=async function(){
   const desc=document.getElementById('g-desc')?.value.trim();
   const valor=Number(document.getElementById('g-valor')?.value||0);
-  const data=document.getElementById('g-data')?.value||new Date().toISOString().split('T')[0];
+  const data=document.getElementById('g-data')?.value||hojeLocal();
   const cat=document.getElementById('g-cat')?.value||'outros';
   const tipo=document.getElementById('g-tipo')?.value||'gasto';
   if(!desc||!valor){alert('Preencha descrição e valor.');return;}
@@ -3746,7 +3825,7 @@ window.salvarGasto=async function(){
     await addDoc(gastosCol,{desc,valor:tipo==='receita'?-Math.abs(valor):Math.abs(valor),data,cat,tipo,criadoEm:new Date().toISOString()});
     document.getElementById('g-desc').value='';
     document.getElementById('g-valor').value='';
-    document.getElementById('g-data').value=new Date().toISOString().split('T')[0];
+    document.getElementById('g-data').value=hojeLocal();
     const msg=document.getElementById('gasto-msg');
     if(msg){msg.style.display='inline';setTimeout(()=>msg.style.display='none',2000);}
     await loadGastos();
@@ -4225,7 +4304,7 @@ window.toggleFinForm=function(){
   f.style.display=abrindo?'block':'none';
   if(abrindo){
     const dataEl=document.getElementById('fin-data');
-    if(dataEl&&!dataEl.value)dataEl.value=new Date().toISOString().split('T')[0];
+    if(dataEl&&!dataEl.value)dataEl.value=hojeLocal();
     toggleFinSocio();
   }
 };
@@ -4239,7 +4318,7 @@ window.toggleFinSocio=function(){
 window.salvarFinanceiro=async function(){
   const desc=document.getElementById('fin-desc')?.value.trim();
   const valor=Number(document.getElementById('fin-valor')?.value||0);
-  const data=document.getElementById('fin-data')?.value||new Date().toISOString().split('T')[0];
+  const data=document.getElementById('fin-data')?.value||hojeLocal();
   const tipo=document.getElementById('fin-tipo')?.value||'outros';
   const socio=tipo==='retirada'?(document.getElementById('fin-socio')?.value||''):'';
   const obs=document.getElementById('fin-obs')?.value.trim()||'';
@@ -4306,7 +4385,7 @@ function renderFinanceiro(){
 
   // Inicializar data
   const dataEl=document.getElementById('fin-data');
-  if(dataEl&&!dataEl.value)dataEl.value=new Date().toISOString().split('T')[0];
+  if(dataEl&&!dataEl.value)dataEl.value=hojeLocal();
 
   // Calcular saldos
   const saldos=calcSaldos();
@@ -5484,7 +5563,7 @@ window.capMigrarEstoque=async function(id){
   if(!confirm('Migrar para o Estoque:\n'+(b.marca||'')+' '+(b.modelo||'')+' '+(b.ano||'')+'\n\nA bike será criada no Estoque para você completar as informações e registrar a venda.'))return;
 
   try{
-    const hoje=new Date().toISOString().split('T')[0];
+    const hoje=hojeLocal();
     const novaBike={
       marca:(b.marca||'').trim(),
       modelo:(b.modelo||'').trim(),
@@ -5524,9 +5603,9 @@ window.capMigrarEstoque=async function(id){
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded',()=>{
   const dataEl=document.getElementById('n-data');
-  if(dataEl)dataEl.value=new Date().toISOString().split('T')[0];
+  if(dataEl)dataEl.value=hojeLocal();
   const gastoDataEl=document.getElementById('g-data');
-  if(gastoDataEl)gastoDataEl.value=new Date().toISOString().split('T')[0];
+  if(gastoDataEl)gastoDataEl.value=hojeLocal();
   // Os dados só carregam depois do login (Firebase + Supabase)
   onAuthStateChanged(auth, async user => {
     if (user && await window.sbHasSession()) nfEntrar();
@@ -7158,6 +7237,59 @@ async function capRecarregarCap(id) {
   capDetalhe = id; drawCap();
 }
 
+// ===== FOTOS: deixa cada foto com no máximo ~4,5 MB antes de mandar para a loja (limite da Loja Integrada: 5 MB) =====
+var CAP_FOTO_MAX = 4.5 * 1024 * 1024;
+async function capTamanhoFoto(url) {
+  try { var h = await fetch(url, { method: 'HEAD', cache: 'no-store' }); var n = Number(h.headers.get('content-length') || 0); if (h.ok && n) return { n: n, tipo: h.headers.get('content-type') || '' }; } catch (e) {}
+  var r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status);
+  var bl = await r.blob(); return { n: bl.size, tipo: bl.type, blob: bl };
+}
+async function capComprimirImagem(blob) {
+  var img = await createImageBitmap(blob);
+  var lado = 2560, escala = Math.min(1, lado / Math.max(img.width, img.height));
+  var qualidade = 0.88, saida = null;
+  for (var tentativa = 0; tentativa < 10; tentativa++) {
+    var w = Math.max(1, Math.round(img.width * escala)), h = Math.max(1, Math.round(img.height * escala));
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+    saida = await new Promise(function(ok){ cv.toBlob(ok, 'image/jpeg', qualidade); });
+    if (saida && saida.size <= CAP_FOTO_MAX) break;
+    if (qualidade > 0.7) qualidade -= 0.08; else escala *= 0.85;
+  }
+  if (img.close) img.close();
+  if (!saida || saida.size > CAP_FOTO_MAX) throw new Error('não ficou abaixo de 5 MB');
+  return saida;
+}
+async function capEnviarFotoStorage(id, blob, n) {
+  var tok = await sbToken();
+  var path = 'otimizadas/' + String(id).replace(/[^a-zA-Z0-9_\-]/g, '_') + '/' + Date.now() + '_' + n + '.jpg';
+  var res = await fetch(SB_URL + '/storage/v1/object/bike-photos/' + path, {
+    method: 'POST', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + (tok || SB_KEY), 'Content-Type': 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+  if (!res.ok) { var t = ''; try { t = (await res.json()).message || ''; } catch (e) {} throw new Error(t || ('HTTP ' + res.status)); }
+  return SB_URL + '/storage/v1/object/public/bike-photos/' + path;
+}
+// Confere todas as fotos da bike e troca as grandes por versões otimizadas (o original continua guardado)
+async function capOtimizarFotos(id, aviso) {
+  var b = capBike(id); if (!b) return { trocadas: 0, avisos: [] };
+  var fotos = capFotos(b), novas = fotos.slice(), trocadas = 0, avisos = [];
+  for (var i = 0; i < fotos.length; i++) {
+    try {
+      if (aviso) aviso('🖼️ Conferindo fotos (' + (i + 1) + ' de ' + fotos.length + ')...');
+      var t = await capTamanhoFoto(fotos[i]);
+      var formatoOk = !t.tipo || /jpe?g|png|webp/i.test(t.tipo);
+      if (t.n <= CAP_FOTO_MAX && formatoOk) continue;
+      if (aviso) aviso('🖼️ Otimizando foto ' + (i + 1) + ' de ' + fotos.length + ' (' + (t.n / 1048576).toFixed(1).replace('.', ',') + ' MB)...');
+      var blob = t.blob || await (await fetch(fotos[i], { cache: 'no-store' })).blob();
+      var menor = await capComprimirImagem(blob);
+      novas[i] = await capEnviarFotoStorage(id, menor, i + 1);
+      trocadas++;
+    } catch (e) { avisos.push('Foto ' + (i + 1) + ': não foi possível otimizar (' + e.message + ')'); }
+  }
+  if (trocadas) await capSalvar(id, { fotos: novas });
+  return { trocadas: trocadas, avisos: avisos };
+}
+window.capOtimizarFotos = capOtimizarFotos;
+
 async function capPublicarLoja(id, automatico) {
   if (capLojaOcupado) return;
   var b = capBike(id); if (!b) return;
@@ -7166,7 +7298,15 @@ async function capPublicarLoja(id, automatico) {
   capAvisoLoja('🛒 ' + (b.loja_produto_id ? 'Atualizando' : 'Publicando') + ' na Loja Integrada... (pode levar até 20s)');
   try {
     if (!automatico) await capSalvar(id, { descricao_gerada: capGerarDescricao(b) }); // descrição sempre atual
+    // Fotos acima de 5 MB são recusadas pela loja: otimiza antes de publicar (só quando as fotos vão ser enviadas)
+    var otim = { trocadas: 0, avisos: [] };
+    if (!b.loja_produto_id) {
+      otim = await capOtimizarFotos(id, function(t){ capAvisoLoja(t); });
+      capAvisoLoja('🛒 Publicando na Loja Integrada... (pode levar até 20s)');
+    }
     var r = await capChamarLoja('publicar', id);
+    if (otim.trocadas) r.avisos = [otim.trocadas + ' foto(s) acima de 5 MB foram otimizadas antes do envio.'].concat(r.avisos || []);
+    if (otim.avisos.length) r.avisos = (r.avisos || []).concat(otim.avisos);
     capAvisoLoja('');
     var msg = (r.novo ? '✅ Publicado na loja' : '✅ Anúncio atualizado na loja') + ' (produto ' + r.produto_id + ').';
     if (r.novo) msg += '\n' + r.fotos_enviadas + ' foto(s) enviada(s).';
@@ -7373,6 +7513,10 @@ async function capUploadFotos(id, input) {
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
     if (msg) { msg.style.color = 'var(--text2)'; msg.textContent = 'Enviando foto ' + (i+1) + ' de ' + files.length + '...'; }
+    if (f.size > CAP_FOTO_MAX) {
+      try { if (msg) msg.textContent = 'Otimizando foto ' + (i+1) + ' (acima de 5 MB)...'; var menor = await capComprimirImagem(f); f = new File([menor], (f.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }); }
+      catch (e) { /* segue com o original */ }
+    }
     var ext = ((f.name.split('.').pop() || 'jpg').toLowerCase()).replace(/[^a-z0-9]/g, '') || 'jpg';
     var path = 'painel/' + safe + '/' + Date.now() + '_' + i + '.' + ext;
     try {
@@ -8058,7 +8202,7 @@ async function salvarCliente(tipo, dados) {
 
     const entrada = {
       tipo: tipo,
-      data: dados.dataVenda || dados.dataEntrada || new Date().toISOString().split('T')[0],
+      data: dados.dataVenda || dados.dataEntrada || hojeLocal(),
       bike: (dados.marca||'') + ' ' + (dados.modelo||''),
       valor: dados.valorVenda || dados.valor || 0,
       bikeId: dados.bikeId || ''

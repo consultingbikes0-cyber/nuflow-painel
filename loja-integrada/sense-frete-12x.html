@@ -1,0 +1,138 @@
+<!--
+  Nuflow · Seminovas de Fábrica Sense: selo "Frete grátis + 12x sem juros" e sem a tabela de parcelamento
+  Onde colar: painel da Loja Integrada > Configurações > Código HTML > Criar
+    Descrição: Sense - frete grátis e 12x
+    Local de publicação: Rodapé
+    Página: Todas as páginas
+    Tipo: HTML
+  O que faz (SÓ nas bikes da categoria "Seminovas de Fábrica Sense"; o resto da loja não muda):
+    • Página do produto: esconde a tabela de parcelamento, troca o "até Nx" por "12x de R$ … sem juros" e mostra o selo.
+    • Página da categoria Sense: troca o "até Nx" de cada bike por "12x sem juros · frete grátis".
+  Para desligar: desative este código no mesmo menu.
+-->
+<style>
+  .nf-sense-selo{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:14px 0;padding:12px 16px;border-radius:10px;
+    background:#eef8f1;border:1px solid #bfe3cb;color:#1d5a35;font-size:14px;font-weight:600;line-height:1.35}
+  .nf-sense-selo span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .nf-sense-selo small{display:block;width:100%;font-weight:400;font-size:12px;color:#3d6b4f}
+  .nf-sense-12x{color:#1d5a35!important;font-weight:600}
+  .nf-sense-oculto{display:none!important}
+</style>
+<script>
+(function () {
+  var CATEGORIA = 'seminovas-de-fabrica-sense';
+  var PARCELAS = 12;
+
+  function paginaCategoriaSense() { return new RegExp('/' + CATEGORIA + '(/|$)').test(location.pathname); }
+  function produtoSense() {
+    // A trilha de navegação (breadcrumb) do produto aponta para a categoria Sense
+    var links = document.querySelectorAll('.breadcrumbs a, .breadcrumb a, [itemtype*="BreadcrumbList"] a, nav a');
+    for (var i = 0; i < links.length; i++) { if ((links[i].getAttribute('href') || '').indexOf(CATEGORIA) >= 0) return true; }
+    return false;
+  }
+  function paginaProduto() {
+    return !!document.querySelector('.pagina-produto, [itemtype*="schema.org/Product"], #comprar, .botao-comprar, .acoes-produto');
+  }
+  function numero(txt) {
+    var m = String(txt || '').match(/R\$\s*([\d.]+,\d{2})/);
+    return m ? Number(m[1].replace(/\./g, '').replace(',', '.')) : 0;
+  }
+  // Texto do elemento com espaço entre os pedaços (textContent junta "2.145,56" com "5x" e quebra a leitura)
+  function texto(el) {
+    var partes = [], w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null), n;
+    while ((n = w.nextNode())) partes.push(n.nodeValue);
+    return partes.join(' ').replace(/\s+/g, ' ');
+  }
+  function brl(v) { return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function precoDoProduto() {
+    var meta = document.querySelector('[itemprop="price"]');
+    var v = meta ? Number(String(meta.getAttribute('content') || '').replace(',', '.')) : 0;
+    if (v > 0) return v;
+    var el = document.querySelector('.preco-promocional, .preco-venda, .preco-produto strong, .preco-produto');
+    return el ? numero(el.textContent) : 0;
+  }
+  // Maior valor em R$ dentro de um bloco = preço da bike (as parcelas são menores)
+  function maiorValor(el) {
+    var maior = 0, re = /R\$\s*([\d.]+,\d{2})/g, m, t = el ? texto(el) : '';
+    while ((m = re.exec(t))) { var n = Number(m[1].replace(/\./g, '').replace(',', '.')); if (n > maior) maior = n; }
+    return maior;
+  }
+  // Conta quantas parcelas DIFERENTES aparecem (1x, 2x, 3x...): uma vitrine com várias bikes "até 3x" não conta
+  function contaParcelas(el) {
+    var t = texto(el), re = /\b(\d{1,2})\s*x\s*(de\s*)?R\$/gi, m, vistos = {};
+    while ((m = re.exec(t))) vistos[m[1]] = 1;
+    return Object.keys(vistos).length;
+  }
+
+  // Esconde a tabela/lista de parcelamento (a do tema e qualquer lista com várias linhas "Nx de R$")
+  function esconderTabelas() {
+    var alvos = document.querySelectorAll('.parcelas-produto, .tabela-parcelamento, .accordion-parcelas, #modalParcelas');
+    for (var i = 0; i < alvos.length; i++) alvos[i].classList.add('nf-sense-oculto');
+    var cand = document.querySelectorAll('ul, ol, table, dl, div, section');
+    for (var j = 0; j < cand.length; j++) {
+      var el = cand[j];
+      if (el.classList.contains('nf-sense-oculto') || el.closest('.nf-sense-oculto, .nf-sense-selo')) continue;
+      if (el.querySelector('form, button, input, select, img')) continue;
+      if (contaParcelas(el) < 4) continue;
+      // pega só o bloco mais interno que ainda tem a lista inteira
+      var filhoComLista = false;
+      for (var k = 0; k < el.children.length; k++) { if (contaParcelas(el.children[k]) >= 4) { filhoComLista = true; break; } }
+      if (filhoComLista) continue;
+      el.classList.add('nf-sense-oculto');
+      var titulo = el.previousElementSibling;
+      if (titulo && /parcel/i.test(titulo.textContent) && titulo.textContent.length < 60) titulo.classList.add('nf-sense-oculto');
+    }
+  }
+  // Troca "até 3x de R$ ... sem juros" por "12x de R$ ... sem juros"
+  function trocarTextoParcela(raiz, preco, curto) {
+    var els = raiz.querySelectorAll('*');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.children.length > 3 || el.dataset.nfSense) continue;
+      var t = texto(el).trim();
+      if (t.length > 70 || !/\bat[eé]\s*\d{1,2}\s*x\b/i.test(t)) continue;
+      // usa o elemento mais interno que tem o texto inteiro (nunca o bloco do preço todo)
+      var filhoTem = false;
+      for (var c = 0; c < el.children.length; c++) { if (/\bat[eé]\s*\d{1,2}\s*x\b/i.test(texto(el.children[c]))) { filhoTem = true; break; } }
+      if (filhoTem || /R\$\s*[\d.]+,\d{2}[^R]*R\$/.test(t) && !/^\s*(ou\s*)?at[eé]/i.test(t)) continue;
+      var p = preco || maiorValor(el.closest('li, .listagem-item, .produto, .info-produto, .principal') || el.parentNode);
+      if (!p) continue;
+      el.dataset.nfSense = '1';
+      el.innerHTML = '<span class="nf-sense-12x">' + (curto ? '' : 'ou ') + PARCELAS + 'x de ' + brl(Math.round(p / PARCELAS * 100) / 100) + ' sem juros' + (curto ? ' · frete grátis' : '') + '</span>';
+    }
+  }
+  function selo(preco) {
+    if (document.querySelector('.nf-sense-selo')) return;
+    var box = document.createElement('div');
+    box.className = 'nf-sense-selo';
+    box.innerHTML = '<span>🚚 Frete grátis para todo o Brasil</span><span>💳 ' + PARCELAS + 'x sem juros' + (preco ? ' de ' + brl(Math.round(preco / PARCELAS * 100) / 100) : '') + '</span>' +
+      '<span>✅ Garantia de fábrica Sense</span>';
+    var ancora = document.querySelector('.acoes-produto, .preco-produto, .principal .preco, [itemprop="offers"]');
+    if (ancora && ancora.parentNode) ancora.parentNode.insertBefore(box, ancora.nextSibling);
+    else { var h1 = document.querySelector('h1'); if (h1 && h1.parentNode) h1.parentNode.insertBefore(box, h1.nextSibling); }
+  }
+
+  function aplicar() {
+    if (paginaCategoriaSense()) { trocarTextoParcela(document.body, 0, true); return; }
+    if (!paginaProduto() || !produtoSense()) return;
+    var preco = precoDoProduto();
+    esconderTabelas();
+    var area = document.querySelector('.principal, .info-principal-produto, [itemtype*="schema.org/Product"]') || document.body;
+    trocarTextoParcela(area, preco, false);
+    selo(preco);
+  }
+
+  var agendado = null;
+  function agendar() { if (agendado) return; agendado = setTimeout(function () { agendado = null; aplicar(); }, 120); }
+  function iniciar() {
+    aplicar();
+    // A loja carrega o parcelamento depois da página; reaplica quando algo muda (por 15 s)
+    if (window.MutationObserver) {
+      var obs = new MutationObserver(agendar);
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(function () { obs.disconnect(); }, 15000);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
+</script>
