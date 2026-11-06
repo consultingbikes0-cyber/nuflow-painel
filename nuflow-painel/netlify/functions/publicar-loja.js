@@ -177,7 +177,16 @@ exports.handler = async (event) => {
   let seoUri = '';
 
   // Já publicado antes: atualiza o mesmo produto (evita duplicar)
+  // Produto apagado no admin da loja: a API pode responder 404 ou devolver o produto marcado como "removido"
+  let produtoVivo = !!produtoAtual;
   if (produtoAtual) {
+    const g = await li('GET', '/v1/produto/' + produtoAtual);
+    if (g.status === 404 || (g.ok && g.dados && (g.dados.removido === true || g.dados.removido === 'true'))) {
+      produtoVivo = false;
+      avisos.push('O anúncio antigo (produto ' + produtoAtual + ') tinha sido excluído da loja; foi criado um anúncio novo.');
+    }
+  }
+  if (produtoAtual && produtoVivo) {
     const r = await li('PUT', '/v1/produto/' + produtoAtual, dadosProduto);
     if (r.ok) { produtoId = produtoAtual; urlLoja = (r.dados && r.dados.url) || ''; seoUri = (r.dados && r.dados.seo) || ''; }
     else if (r.status !== 404) return json(502, { erro: 'A loja recusou a atualização: ' + erroLi(r) });
@@ -186,7 +195,11 @@ exports.handler = async (event) => {
 
   if (!produtoId) {
     const sku = 'NFB-' + String(id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16).toUpperCase();
-    const r = await li('POST', '/v1/produto/', Object.assign({ sku: sku, tipo: 'normal' }, dadosProduto));
+    let r = await li('POST', '/v1/produto/', Object.assign({ sku: sku, tipo: 'normal' }, dadosProduto));
+    // Republicação depois de excluir na loja: o código (SKU) antigo pode continuar reservado. Tenta com um código novo.
+    if (!r.ok && (produtoAtual || /sku|c[oó]digo|exist|duplic|unique/i.test(erroLi(r)))) {
+      r = await li('POST', '/v1/produto/', Object.assign({ sku: sku + '-' + Date.now().toString(36).toUpperCase().slice(-4), tipo: 'normal' }, dadosProduto));
+    }
     if (!r.ok || !r.dados || !r.dados.id) return json(502, { erro: 'A loja recusou a criação do produto: ' + erroLi(r) });
     produtoId = String(r.dados.id);
     produtoNovo = true;

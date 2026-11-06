@@ -7300,7 +7300,7 @@ async function capPublicarLoja(id, automatico) {
     if (!automatico) await capSalvar(id, { descricao_gerada: capGerarDescricao(b) }); // descrição sempre atual
     // Fotos acima de 5 MB são recusadas pela loja: otimiza antes de publicar (só quando as fotos vão ser enviadas)
     var otim = { trocadas: 0, avisos: [] };
-    if (!b.loja_produto_id) {
+    {  // sempre confere (o anúncio pode ter sido excluído na loja e ser recriado com as fotos)
       otim = await capOtimizarFotos(id, function(t){ capAvisoLoja(t); });
       capAvisoLoja('🛒 Publicando na Loja Integrada... (pode levar até 20s)');
     }
