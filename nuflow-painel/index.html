@@ -464,6 +464,7 @@ body.nf-equipe .nf-so-admin{display:none!important;}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm" id="btn-fipe-comissao" onclick="toggleFipeComissao()" style="border-color:var(--text3);color:var(--text3)">👁 Ocultar comissão</button>
+      <button class="btn btn-sm" id="btn-fipe-ref" onclick="refPublicar(true)" title="Envia o preço médio de cada modelo para o formulário de captação mostrar como preço sugerido">🔗 Atualizar preço sugerido do formulário</button>
 
     </div>
   </div>
@@ -489,6 +490,7 @@ body.nf-equipe .nf-so-admin{display:none!important;}
   </div>
 
   <!-- Conteúdo da tabela -->
+  <div id="fipe-ref-status" style="font-size:12px;color:var(--text3);margin-bottom:.75rem"></div>
   <div id="fipe-content"></div>
 </div>
 
@@ -936,6 +938,8 @@ async function loadData(){
   await loadFinanceiro();
   await carregarClientesEmMemoria();
   updateCounts();renderEstoque();renderVendidas();renderBCPending();renderAlertas();renderProgressoMetas();
+  // Mantém o preço sugerido do formulário de captação igual à Tabela de Preços (em segundo plano)
+  setTimeout(()=>refPublicar(false).catch(()=>{}),1500);
   // Limpeza roda em background sem bloquear
   setTimeout(()=>limparFotosAntigas().catch(()=>{}),3000);
 }
@@ -4842,6 +4846,87 @@ window.toggleFipeDetalhe=function(key){
 };
 
 window.renderFipe=renderFipe;
+
+// ===== PREÇO SUGERIDO NO FORMULÁRIO DE CAPTAÇÃO =====
+// Envia um resumo da Tabela de Preços para o Supabase (tabela "tabela_precos").
+// O formulário público consulta esse resumo e mostra o preço sugerido ao vendedor.
+// Vai só: marca, modelo, ano, tipo, preço médio e quantidade de vendas. Comissão e comprador não saem do painel.
+const REF_MESES=24; // vendas mais antigas que isso não entram na sugestão (o preço de usado cai com o tempo)
+let _refEstado={texto:'',cor:''};
+function refChave(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
+function refMontarLinhas(){
+  const lim=new Date();lim.setMonth(lim.getMonth()-REF_MESES);
+  const limite=lim.toISOString().slice(0,10);
+  const g={};
+  bikes.forEach(b=>{
+    const valor=Number(b.valorVenda);
+    if(!b.vendida||!(valor>0)||compKey(b)!=='completa')return; // só bike completa vendida
+    if(!b.dataVenda||String(b.dataVenda)<limite)return;        // só venda recente e com data
+    // Mesmas regras de agrupamento da Tabela de Preços (inclui os modelos que você juntou)
+    const marcaFipe=(b.marca||'').trim().replace(/^SENSE$/i,'Sense').replace(/^SPECIALIZED$/i,'Specialized').replace(/^TREK$/i,'Trek').replace(/^SCOTT$/i,'Scott').replace(/^GIANT$/i,'Giant');
+    const modelo=String(normalizarModelo(marcaFipe,b.modelo)||'').trim();
+    const versao=String(b.versao||'').trim();
+    if(!marcaFipe||!modelo)return;
+    const nome=(versao&&!refChave(modelo).endsWith(refChave(versao)))?modelo+' '+versao:modelo;
+    const ano=/^\d{4}$/.test(String(b.ano||'').trim())?String(b.ano).trim():'';
+    const mc=refChave(marcaFipe),moc=refChave(nome);
+    if(!mc||moc.length<2)return;
+    const k=mc+'|'+moc+'|'+ano;
+    if(!g[k])g[k]={marca_chave:mc,modelo_chave:moc,ano,marca:normMarca(marcaFipe),modelo:nome,tipo:null,valores:[],ultima_venda:null};
+    g[k].valores.push(valor);
+    if(b.tipo)g[k].tipo=normTipo(b.tipo);
+    if(!g[k].ultima_venda||String(b.dataVenda)>g[k].ultima_venda)g[k].ultima_venda=String(b.dataVenda).slice(0,10);
+  });
+  return Object.values(g).map(x=>({
+    marca_chave:x.marca_chave,modelo_chave:x.modelo_chave,ano:x.ano,marca:x.marca,modelo:x.modelo,tipo:x.tipo,
+    preco:Math.round(x.valores.reduce((s,v)=>s+v,0)/x.valores.length/100)*100, // média, arredondada para a centena
+    vendas:x.valores.length,ultima_venda:x.ultima_venda
+  })).sort((a,b)=>(a.marca_chave+a.modelo_chave+a.ano).localeCompare(b.marca_chave+b.modelo_chave+b.ano));
+}
+function refAssinatura(linhas){
+  return JSON.stringify(linhas.map(l=>[l.marca_chave,l.modelo_chave,l.ano||'',l.marca,l.modelo,l.tipo||'',Number(l.preco),Number(l.vendas),l.ultima_venda||''])
+    .sort((a,b)=>(a[0]+a[1]+a[2]).localeCompare(b[0]+b[1]+b[2])));
+}
+function refStatus(texto,cor){
+  _refEstado={texto,cor:cor||'var(--text3)'};
+  const el=document.getElementById('fipe-ref-status');
+  if(el){el.textContent=texto;el.style.color=_refEstado.cor;}
+}
+// manual=true: clique no botão (mostra erros). manual=false: automático, em silêncio.
+async function refPublicar(manual){
+  const sb=window.sbFetchBase;
+  if(typeof sb!=='function'||!window.sbHasSession||!(await window.sbHasSession())){
+    if(manual)refStatus('Entre no painel de novo para atualizar o preço sugerido do formulário.','var(--amber)');
+    return;
+  }
+  const linhas=refMontarLinhas();
+  const resumo=n=>'Preço sugerido no formulário: '+n+' modelo(s) com venda nos últimos '+REF_MESES+' meses';
+  try{
+    if(manual)refStatus('Atualizando o formulário...');
+    const atual=await sb('/rest/v1/tabela_precos?select=marca_chave,modelo_chave,ano,marca,modelo,tipo,preco,vendas,ultima_venda');
+    if(Array.isArray(atual)&&refAssinatura(atual)===refAssinatura(linhas)){
+      refStatus('✅ '+resumo(linhas.length)+' · em dia');
+      return;
+    }
+    const agora=new Date().toISOString();
+    for(let i=0;i<linhas.length;i+=200){
+      await sb('/rest/v1/tabela_precos?on_conflict=marca_chave,modelo_chave,ano',{method:'POST',
+        headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+        body:JSON.stringify(linhas.slice(i,i+200).map(l=>Object.assign({atualizado_em:agora},l)))});
+    }
+    // Tira do formulário o que saiu da tabela (venda corrigida, modelo renomeado, venda que ficou antiga)
+    await sb('/rest/v1/tabela_precos?atualizado_em=lt.'+encodeURIComponent(agora),{method:'DELETE'});
+    refStatus('✅ '+resumo(linhas.length)+' · atualizado agora');
+  }catch(e){
+    console.warn('[preço sugerido] não foi possível atualizar o formulário:',e);
+    const msg=String(e&&e.message||e);
+    const faltaSql=/tabela_precos|schema cache|404|does not exist/i.test(msg);
+    refStatus(faltaSql
+      ?'⚠️ Preço sugerido do formulário ainda não ativado: falta rodar o arquivo sql/8_tabela_precos.sql no Supabase.'
+      :'⚠️ Não foi possível atualizar o preço sugerido do formulário: '+msg,'var(--amber)');
+  }
+}
+window.refPublicar=refPublicar;
 
 // ===== HELPERS =====
 function cnt(arr,key){const r={};arr.forEach(b=>{const v=b[key]||'Outro';r[v]=(r[v]||0)+1;});return r;}
